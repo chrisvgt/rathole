@@ -45,15 +45,15 @@ jobs:
           - os: ubuntu-latest
             exe: rathole
             target: x86_64-unknown-linux-gnu
-          - os: windows-latest
-            exe: rathole.exe
-            target: x86_64-pc-windows-msvc
-          - os: macos-latest
-            exe: rathole
-            target: x86_64-apple-darwin
-          - os: macos-latest
-            exe: rathole
-            target: aarch64-apple-darwin
+          # - os: windows-latest
+          #   exe: rathole.exe
+          #   target: x86_64-pc-windows-msvc
+          # - os: macos-latest
+          #   exe: rathole
+          #   target: x86_64-apple-darwin
+          # - os: macos-latest
+          #   exe: rathole
+          #   target: aarch64-apple-darwin
 
     steps:
       - uses: actions/checkout@v4
