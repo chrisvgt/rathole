@@ -87,6 +87,9 @@ jobs:
       - name: Install OpenSSL
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get install pkg-config libssl-dev
+      - name: Install musl tools (Ubuntu)
+        if: matrix.os == 'ubuntu-latest' && contains(matrix.target, 'musl') && matrix.cross == false
+        run: sudo apt-get update && sudo apt-get install -y musl-tools musl-dev pkg-config
       - name: Install OpenSSL
         if: matrix.os == 'macos-latest'
         run: brew install openssl@3
@@ -95,23 +98,29 @@ jobs:
       - name: Install target
         if: matrix.cross == false
         run: rustup target add ${{ matrix.target }}
-      - name: Run tests
-        if: matrix.cross == false && matrix.target != 'aarch64-apple-darwin'
-        run: cargo test --release --target ${{ matrix.target }} --verbose 
-      - name: Build release
-        if: matrix.cross == false 
+      - name: Run tests (non-musl)
+        if: matrix.cross == false && matrix.target != 'aarch64-apple-darwin' && !contains(matrix.target, 'musl')
+        run: cargo test --release --target ${{ matrix.target }} --verbose
+      - name: Run tests (musl, embedded features)
+        if: matrix.cross == false && contains(matrix.target, 'musl')
+        run: cargo test --release --target ${{ matrix.target }} --verbose --no-default-features --features embedded
+      - name: Build release (non-musl)
+        if: matrix.cross == false && !contains(matrix.target, 'musl')
         run: cargo build --release --target ${{ matrix.target }}
+      - name: Build release (musl, embedded features)
+        if: matrix.cross == false && contains(matrix.target, 'musl')
+        run: cargo build --release --target ${{ matrix.target }} --no-default-features --features embedded
 
       # Cross build
       - name: Install cross
         if: matrix.cross
         run: cargo install --version 0.2.5 cross
-      - name: Run tests
+      - name: Run tests (cross)
         if: matrix.cross
-        run: cross test --release --target ${{ matrix.target }} --verbose --features embedded --no-default-features
-      - name: Build release
+        run: cross test --release --target ${{ matrix.target }} --verbose --no-default-features --features embedded
+      - name: Build release (cross)
         if: matrix.cross
-        run: cross build --release --target ${{ matrix.target }} --features embedded --no-default-features
+        run: cross build --release --target ${{ matrix.target }} --no-default-features --features embedded
 
       - name: Run UPX
         # Upx may not support some platforms. Ignore the errors
