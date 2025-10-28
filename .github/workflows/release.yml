@@ -81,11 +81,8 @@ jobs:
             exe: rathole.exe
             cross: false
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          default: true
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       
       - name: Install OpenSSL
         if: matrix.os == 'ubuntu-latest'
