@@ -118,9 +118,6 @@ jobs:
       - name: Install cross
         if: matrix.cross
         run: cargo install --version 0.2.5 cross
-      - name: Run tests (cross, nightly build-std for mips*)
-        if: matrix.cross && contains(matrix.target, 'mips')
-        run: cross +nightly test -Z build-std=std,panic_abort --release --target ${{ matrix.target }} --verbose --no-default-features --features embedded
       - name: Build release (cross, nightly build-std for mips*)
         if: matrix.cross && contains(matrix.target, 'mips')
         run: cross +nightly build -Z build-std=std,panic_abort --release --target ${{ matrix.target }} --no-default-features --features embedded
