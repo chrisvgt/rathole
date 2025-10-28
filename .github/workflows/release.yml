@@ -120,10 +120,10 @@ jobs:
         run: cargo install --version 0.2.5 cross
       - name: Run tests (cross, nightly build-std for mips*)
         if: matrix.cross && contains(matrix.target, 'mips')
-        run: cross +nightly test -Z build-std=std,panic_abort,core,alloc --release --target ${{ matrix.target }} --verbose --no-default-features --features embedded
+        run: cross +nightly test -Z build-std=std,panic_abort --release --target ${{ matrix.target }} --verbose --no-default-features --features embedded
       - name: Build release (cross, nightly build-std for mips*)
         if: matrix.cross && contains(matrix.target, 'mips')
-        run: cross +nightly build -Z build-std=std,panic_abort,core,alloc --release --target ${{ matrix.target }} --no-default-features --features embedded
+        run: cross +nightly build -Z build-std=std,panic_abort --release --target ${{ matrix.target }} --no-default-features --features embedded
       - name: Run tests (cross)
         if: matrix.cross && !contains(matrix.target, 'mips')
         run: cross test --release --target ${{ matrix.target }} --verbose --no-default-features --features embedded
