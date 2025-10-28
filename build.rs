@@ -1,15 +1,14 @@
 use anyhow::Result;
-use vergen::{vergen, Config, SemverKind};
+use vergen::{vergen, Config};
+#[cfg(all(feature = "git", not(windows)))]
+use vergen::SemverKind;
 
 fn main() -> Result<()> {
     let mut config = Config::default();
-    // On Windows, avoid linking libgit2 by disabling git metadata entirely.
-    // On other platforms, tweak git-derived semver as before.
-    #[cfg(windows)]
-    {
-        *config.git_mut().enabled_mut() = false;
-    }
-    #[cfg(not(windows))]
+    // When the vergen `git` feature is enabled (non-Windows per Cargo.toml),
+    // tweak git-derived semver as before. On Windows, the `git` feature is
+    // disabled to avoid libgit2 linking, so this block is not compiled.
+    #[cfg(all(feature = "git", not(windows)))]
     {
         // Change the SEMVER output to the lightweight variant
         *config.git_mut().semver_kind_mut() = SemverKind::Lightweight;
