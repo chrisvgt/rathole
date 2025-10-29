@@ -11,8 +11,14 @@ fn main() -> Result<()> {
         {
             // Change the SEMVER output to the lightweight variant
             *c.git_mut().semver_kind_mut() = SemverKind::Lightweight;
-            // Add a `-dirty` flag to the SEMVER output
-            *c.git_mut().semver_dirty_mut() = Some("-dirty");
+            // Only append a "-dirty" suffix for local/developer builds. Skip
+            // it in CI or when building a tag so release artifacts remain
+            // reproducible and clean.
+            let is_ci = std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
+            let is_tag = std::env::var("GITHUB_REF").map_or(false, |r| r.starts_with("refs/tags/"));
+            if !is_ci && !is_tag {
+                *c.git_mut().semver_dirty_mut() = Some("-dirty");
+            }
         }
         c
     };
