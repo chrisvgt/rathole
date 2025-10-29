@@ -15,7 +15,7 @@ fn main() -> Result<()> {
             // it in CI or when building a tag so release artifacts remain
             // reproducible and clean.
             let is_ci = std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
-            let is_tag = std::env::var("GITHUB_REF").map_or(false, |r| r.starts_with("refs/tags/"));
+            let is_tag = std::env::var("GITHUB_REF").is_ok_and(|r| r.starts_with("refs/tags/"));
             if !is_ci && !is_tag {
                 *c.git_mut().semver_dirty_mut() = Some("-dirty");
             }
