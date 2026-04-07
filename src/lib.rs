@@ -60,8 +60,8 @@ fn genkey(curve: Option<KeypairType>) -> Result<()> {
 }
 
 pub async fn run(args: Cli, shutdown_rx: broadcast::Receiver<bool>) -> Result<()> {
-    if args.genkey.is_some() {
-        return genkey(args.genkey.unwrap());
+    if let Some(value) = args.genkey {
+        return genkey(value);
     }
 
     // Raise `nofile` limit on linux and mac
