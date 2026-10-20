@@ -8,9 +8,7 @@ use crate::protocol::{
 };
 use crate::transport::{AddrMaybeCached, SocketOpts, TcpTransport, Transport};
 use anyhow::{anyhow, bail, Context, Result};
-use backoff::backoff::Backoff;
-use backoff::future::retry_notify;
-use backoff::ExponentialBackoff;
+use crate::backoff::{retry_notify, ExponentialBackoff};
 use bytes::{Bytes, BytesMut};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -192,7 +190,6 @@ async fn do_data_channel_handshake<T: Transport>(
                 .connect(&args.remote_addr)
                 .await
                 .with_context(|| format!("Failed to connect to {}", args.remote_addr))
-                .map_err(backoff::Error::transient)
         },
         |e, duration| {
             warn!("{:#}. Retry in {:?}", e, duration);
