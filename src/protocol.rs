@@ -10,9 +10,10 @@ use tracing::trace;
 
 type ProtocolVersion = u8;
 const _PROTO_V0: u8 = 0u8;
-const PROTO_V1: u8 = 1u8;
+const _PROTO_V1: u8 = 1u8;
+const PROTO_V2: u8 = 2u8;
 
-pub const CURRENT_PROTO_VERSION: ProtocolVersion = PROTO_V1;
+pub const CURRENT_PROTO_VERSION: ProtocolVersion = PROTO_V2;
 
 pub type Digest = [u8; HASH_WIDTH_IN_BYTES];
 
@@ -78,7 +79,7 @@ impl UdpTraffic {
             len: self.data.len() as UdpPacketLen,
         };
 
-        let v = bincode::serialize(&hdr).unwrap();
+        let v = postcard::to_stdvec(&hdr).unwrap();
 
         trace!("Write {:?} of length {}", hdr, v.len());
         writer.write_u8(v.len() as u8).await?;
@@ -100,7 +101,7 @@ impl UdpTraffic {
             len: data.len() as UdpPacketLen,
         };
 
-        let v = bincode::serialize(&hdr).unwrap();
+        let v = postcard::to_stdvec(&hdr).unwrap();
 
         trace!("Write {:?} of length {}", hdr, v.len());
         writer.write_u8(v.len() as u8).await?;
@@ -119,7 +120,7 @@ impl UdpTraffic {
             .with_context(|| "Failed to read udp header")?;
 
         let hdr: UdpHeader =
-            bincode::deserialize(&buf).with_context(|| "Failed to deserialize UdpHeader")?;
+            postcard::from_bytes(&buf).with_context(|| "Failed to deserialize UdpHeader")?;
 
         trace!("hdr {:?}", hdr);
 
@@ -152,15 +153,19 @@ impl PacketLength {
     pub fn new() -> PacketLength {
         let username = "default";
         let d = digest(username.as_bytes());
-        let hello = bincode::serialized_size(&Hello::ControlChannelHello(CURRENT_PROTO_VERSION, d))
-            .unwrap() as usize;
-        let c_cmd =
-            bincode::serialized_size(&ControlChannelCmd::CreateDataChannel).unwrap() as usize;
-        let d_cmd = bincode::serialized_size(&DataChannelCmd::StartForwardTcp).unwrap() as usize;
+        let hello = postcard::to_stdvec(&Hello::ControlChannelHello(CURRENT_PROTO_VERSION, d))
+            .unwrap()
+            .len();
+        let c_cmd = postcard::to_stdvec(&ControlChannelCmd::CreateDataChannel)
+            .unwrap()
+            .len();
+        let d_cmd = postcard::to_stdvec(&DataChannelCmd::StartForwardTcp)
+            .unwrap()
+            .len();
         let ack = Ack::Ok;
-        let ack = bincode::serialized_size(&ack).unwrap() as usize;
+        let ack = postcard::to_stdvec(&ack).unwrap().len();
 
-        let auth = bincode::serialized_size(&Auth(d)).unwrap() as usize;
+        let auth = postcard::to_stdvec(&Auth(d)).unwrap().len();
         PacketLength {
             hello,
             ack,
@@ -180,7 +185,7 @@ pub async fn read_hello<T: AsyncRead + AsyncWrite + Unpin>(conn: &mut T) -> Resu
     conn.read_exact(&mut buf)
         .await
         .with_context(|| "Failed to read hello")?;
-    let hello = bincode::deserialize(&buf).with_context(|| "Failed to deserialize hello")?;
+    let hello = postcard::from_bytes(&buf).with_context(|| "Failed to deserialize hello")?;
 
     match hello {
         Hello::ControlChannelHello(v, _) => {
@@ -211,7 +216,7 @@ pub async fn read_auth<T: AsyncRead + AsyncWrite + Unpin>(conn: &mut T) -> Resul
     conn.read_exact(&mut buf)
         .await
         .with_context(|| "Failed to read auth")?;
-    bincode::deserialize(&buf).with_context(|| "Failed to deserialize auth")
+    postcard::from_bytes(&buf).with_context(|| "Failed to deserialize auth")
 }
 
 pub async fn read_ack<T: AsyncRead + AsyncWrite + Unpin>(conn: &mut T) -> Result<Ack> {
@@ -219,7 +224,7 @@ pub async fn read_ack<T: AsyncRead + AsyncWrite + Unpin>(conn: &mut T) -> Result
     conn.read_exact(&mut bytes)
         .await
         .with_context(|| "Failed to read ack")?;
-    bincode::deserialize(&bytes).with_context(|| "Failed to deserialize ack")
+    postcard::from_bytes(&bytes).with_context(|| "Failed to deserialize ack")
 }
 
 pub async fn read_control_cmd<T: AsyncRead + AsyncWrite + Unpin>(
@@ -229,7 +234,7 @@ pub async fn read_control_cmd<T: AsyncRead + AsyncWrite + Unpin>(
     conn.read_exact(&mut bytes)
         .await
         .with_context(|| "Failed to read cmd")?;
-    bincode::deserialize(&bytes).with_context(|| "Failed to deserialize control cmd")
+    postcard::from_bytes(&bytes).with_context(|| "Failed to deserialize control cmd")
 }
 
 pub async fn read_data_cmd<T: AsyncRead + AsyncWrite + Unpin>(
@@ -239,5 +244,5 @@ pub async fn read_data_cmd<T: AsyncRead + AsyncWrite + Unpin>(
     conn.read_exact(&mut bytes)
         .await
         .with_context(|| "Failed to read cmd")?;
-    bincode::deserialize(&bytes).with_context(|| "Failed to deserialize data cmd")
+    postcard::from_bytes(&bytes).with_context(|| "Failed to deserialize data cmd")
 }
