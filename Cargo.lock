@@ -1666,7 +1666,7 @@ dependencies = [
 
 [[package]]
 name = "rathole"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "async-http-proxy",
@@ -1674,7 +1674,7 @@ dependencies = [
  "async-trait",
  "atty",
  "backoff",
- "base64 0.13.1",
+ "base64 0.22.1",
  "bincode",
  "bytes",
  "clap",
