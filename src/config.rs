@@ -292,8 +292,8 @@ impl Config {
         Ok(())
     }
 
-    /// Only accept Noise patterns where the initiator authenticates the responder
-    /// with a pre-known static key, so that a man-in-the-middle cannot be silently accepted
+    /// Patterns where the initiator authenticates the responder (NK, KK, XK, IK) require the
+    /// matching keys. NN and XX are accepted for encryption only and log a warning
     fn validate_noise_config(config: &NoiseConfig, is_server: bool) -> Result<()> {
         let handshake = config
             .pattern
@@ -302,11 +302,20 @@ impl Config {
             .ok_or_else(|| anyhow!("Invalid noise pattern: {}", config.pattern))?;
         // Strip PSK modifiers, e.g. `NKpsk0`
         let base: String = handshake.chars().take(2).collect();
-        if !matches!(base.as_str(), "NK" | "KK" | "XK" | "IK") {
-            bail!(
-                "Unsupported noise pattern `{}`. The pattern must authenticate the server, use one of NK, KK, XK or IK",
+        match base.as_str() {
+            "NK" | "KK" | "XK" | "IK" => {}
+            // Encrypted, but the server is not authenticated. This is opt-in, see `docs/transport.md`
+            "NN" | "XX" => {
+                tracing::warn!(
+                    "Noise pattern `{}` provides no authentication of the server and is vulnerable to MITM attacks. Use NK, KK, XK or IK for an authenticated tunnel",
+                    config.pattern
+                );
+                return Ok(());
+            }
+            _ => bail!(
+                "Unsupported noise pattern `{}`. Use one of NK, KK, XK or IK. NN and XX are accepted but do not authenticate the server",
                 config.pattern
-            );
+            ),
         }
 
         if is_server {
@@ -548,9 +557,17 @@ mod tests {
         assert!(Config::validate_noise_config(&mk(nk, false, true), false).is_ok());
         assert!(Config::validate_noise_config(&mk(nk, false, false), false).is_err());
 
-        // Patterns without server authentication are rejected
+        // NN and XX are encrypted without authentication and need no keys
         for p in [
             "Noise_NN_25519_ChaChaPoly_BLAKE2s",
+            "Noise_XX_25519_ChaChaPoly_BLAKE2s",
+        ] {
+            assert!(Config::validate_noise_config(&mk(p, false, false), true).is_ok());
+            assert!(Config::validate_noise_config(&mk(p, false, false), false).is_ok());
+        }
+
+        // Other patterns are rejected
+        for p in [
             "Noise_NX_25519_ChaChaPoly_BLAKE2s",
             "Noise_N_25519_ChaChaPoly_BLAKE2s",
             "garbage",

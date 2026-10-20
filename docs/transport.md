@@ -100,11 +100,19 @@ Then `rathole` will run under the protection of the Noise Protocol.
 
 The default configuration of Noise Protocol that comes with `rathole` satifies most use cases, which is described above. But there're other patterns that can be useful.
 
-### Patterns Without Server Authentication
+### No Authentication
 
-Patterns that do not authenticate the server, such as `Noise_NN` or `Noise_XX` without a pinned key, are vulnerable to MITM attacks. `rathole` rejects them when the configuration is loaded. Only `NK` (default), `KK`, `XK` and `IK` are accepted.
+This configuration provides encryption of the traffic but provides no authentication, which means it's vulnerable to MITM attack, but is resistent to the sniffing and replay attack. If MITM attack is not one of the concerns, this is more convenient to use.
 
-The server needs `local_private_key`, and the client needs the server's `remote_public_key`.
+```toml
+# Server Side Configuration
+[server.transport.noise]
+pattern = "Noise_XX_25519_ChaChaPoly_BLAKE2s"
+
+# Client Side Configuration
+[client.transport.noise]
+pattern = "Noise_XX_25519_ChaChaPoly_BLAKE2s"
+```
 
 ### Bidirectional Authentication
 
@@ -129,4 +137,4 @@ To find out which pattern to use, refer to:
 - [7.5. Interactive handshake patterns (fundamental)](https://noiseprotocol.org/noise.html#interactive-handshake-patterns-fundamental)
 - [8. Protocol names and modifiers](https://noiseprotocol.org/noise.html#protocol-names-and-modifiers)
 
-Only the patterns `NK`, `KK`, `XK` and `IK` are accepted, see above. Note that PSKs are not supported currently. Free to open an issue if you need it.
+Note that PSKs are not supported currently. Free to open an issue if you need it.
