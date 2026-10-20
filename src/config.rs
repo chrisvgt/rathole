@@ -292,6 +292,41 @@ impl Config {
         Ok(())
     }
 
+    /// Only accept Noise patterns where the initiator authenticates the responder
+    /// with a pre-known static key, so that a man-in-the-middle cannot be silently accepted
+    fn validate_noise_config(config: &NoiseConfig, is_server: bool) -> Result<()> {
+        let handshake = config
+            .pattern
+            .split('_')
+            .nth(1)
+            .ok_or_else(|| anyhow!("Invalid noise pattern: {}", config.pattern))?;
+        // Strip PSK modifiers, e.g. `NKpsk0`
+        let base: String = handshake.chars().take(2).collect();
+        if !matches!(base.as_str(), "NK" | "KK" | "XK" | "IK") {
+            bail!(
+                "Unsupported noise pattern `{}`. The pattern must authenticate the server, use one of NK, KK, XK or IK",
+                config.pattern
+            );
+        }
+
+        if is_server {
+            if config.local_private_key.is_none() {
+                bail!("Missing `noise.local_private_key`. Generate one with `--genkey`");
+            }
+        } else if config.remote_public_key.is_none() {
+            bail!(
+                "Missing `noise.remote_public_key`, the client must know the server's public key"
+            );
+        }
+
+        if base == "KK"
+            && (config.local_private_key.is_none() || config.remote_public_key.is_none())
+        {
+            bail!("The KK pattern requires both `noise.local_private_key` and `noise.remote_public_key`");
+        }
+        Ok(())
+    }
+
     fn validate_transport_config(config: &TransportConfig, is_server: bool) -> Result<()> {
         config
             .tcp
@@ -319,8 +354,11 @@ impl Config {
                 Ok(())
             }
             TransportType::Noise => {
-                // The check is done in transport
-                Ok(())
+                let noise_config = config
+                    .noise
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("Missing noise configuration"))?;
+                Config::validate_noise_config(noise_config, is_server)
             }
             TransportType::Websocket => Ok(()),
         }
@@ -492,5 +530,50 @@ mod tests {
             "4"
         );
         Ok(())
+    }
+
+    #[test]
+    fn test_noise_pattern_validation() {
+        let key = Some("a2V5".to_string());
+        let mk = |pattern: &str, local: bool, remote: bool| NoiseConfig {
+            pattern: pattern.to_string(),
+            local_private_key: local.then(|| MaskedString("a2V5".to_string())),
+            remote_public_key: remote.then(|| key.clone().unwrap()),
+        };
+        let nk = "Noise_NK_25519_ChaChaPoly_BLAKE2s";
+
+        // Server needs its own key, client needs the server's public key
+        assert!(Config::validate_noise_config(&mk(nk, true, false), true).is_ok());
+        assert!(Config::validate_noise_config(&mk(nk, false, false), true).is_err());
+        assert!(Config::validate_noise_config(&mk(nk, false, true), false).is_ok());
+        assert!(Config::validate_noise_config(&mk(nk, false, false), false).is_err());
+
+        // Patterns without server authentication are rejected
+        for p in [
+            "Noise_NN_25519_ChaChaPoly_BLAKE2s",
+            "Noise_NX_25519_ChaChaPoly_BLAKE2s",
+            "Noise_N_25519_ChaChaPoly_BLAKE2s",
+            "garbage",
+        ] {
+            assert!(Config::validate_noise_config(&mk(p, true, true), true).is_err());
+            assert!(Config::validate_noise_config(&mk(p, true, true), false).is_err());
+        }
+
+        // PSK modifiers keep the base pattern, KK needs both keys
+        assert!(Config::validate_noise_config(
+            &mk("Noise_NKpsk0_25519_ChaChaPoly_BLAKE2s", true, false),
+            true
+        )
+        .is_ok());
+        assert!(Config::validate_noise_config(
+            &mk("Noise_KK_25519_ChaChaPoly_BLAKE2s", true, false),
+            true
+        )
+        .is_err());
+        assert!(Config::validate_noise_config(
+            &mk("Noise_KK_25519_ChaChaPoly_BLAKE2s", true, true),
+            true
+        )
+        .is_ok());
     }
 }

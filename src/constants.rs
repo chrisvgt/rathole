@@ -1,4 +1,4 @@
-use backoff::ExponentialBackoff;
+use crate::backoff::ExponentialBackoff;
 use std::time::Duration;
 
 // FIXME: Determine reasonable size

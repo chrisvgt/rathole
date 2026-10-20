@@ -89,6 +89,9 @@ Then run:
 
 So you can `ssh myserver.com:5202` to ssh to your NAS.
 
+> [!WARNING]
+> The default transport is plain TCP and is **not encrypted**. Only the token is protected by a challenge-response, the forwarded traffic is sent in clear text. For anything beyond a test, enable the [Noise Protocol or TLS](./docs/transport.md). With Noise, run `rathole --genkey` once, put the private key into the server's `[server.transport.noise]` and the public key into the client's, and set `type = "noise"` on both sides.
+
 To run `rathole` run as a background service on Linux, checkout the [systemd examples](./examples/systemd).
 
 ## Configuration
@@ -111,7 +114,7 @@ heartbeat_timeout = 40 # Optional. Set to 0 to disable the application-layer hea
 retry_interval = 1 # Optional. The interval between retry to connect to the server. Default: 1 second
 
 [client.transport] # The whole block is optional. Specify which transport to use
-type = "tcp" # Optional. Possible values: ["tcp", "tls", "noise"]. Default: "tcp"
+type = "tcp" # Optional. Possible values: ["tcp", "tls", "noise"]. Default: "tcp" (unencrypted, use "noise" or "tls")
 
 [client.transport.tcp] # Optional. Also affects `noise` and `tls`
 proxy = "socks5://user:passwd@127.0.0.1:1080" # Optional. The proxy used to connect to the server. `http` and `socks5` is supported.
