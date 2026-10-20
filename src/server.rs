@@ -10,9 +10,8 @@ use crate::protocol::{
 };
 use crate::transport::{SocketOpts, TcpTransport, Transport};
 use anyhow::{anyhow, bail, Context, Result};
-use backoff::backoff::Backoff;
+use crate::backoff::ExponentialBackoff;
 use subtle::ConstantTimeEq;
-use backoff::ExponentialBackoff;
 
 use rand::RngCore;
 use std::collections::HashMap;
