@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::io::IsTerminal;
 use clap::Parser;
 use rathole::{run, Cli};
 use tokio::{signal, sync::broadcast};
@@ -30,7 +31,7 @@ async fn main() -> Result<()> {
     }
     #[cfg(not(feature = "console"))]
     {
-        let is_atty = atty::is(atty::Stream::Stdout);
+        let is_atty = std::io::stdout().is_terminal();
 
         let level = "info"; // if RUST_LOG not present, use `info` level
         tracing_subscriber::fmt()
