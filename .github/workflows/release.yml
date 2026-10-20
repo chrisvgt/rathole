@@ -155,6 +155,10 @@ jobs:
         with:
           files: target/${{ matrix.target }}/release/rathole-${{ matrix.target }}.zip
           generate_release_notes: true
+          body: |
+            > [!WARNING]
+            > **Breaking change:** The wire protocol changed (bincode was replaced by postcard, protocol version 2).
+            > Client and server must both be updated to this version. Mixed versions cannot connect.
           draft: true
   # docker:
   #   name: Publish to Docker Hub
