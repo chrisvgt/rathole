@@ -81,7 +81,7 @@ jobs:
             exe: rathole.exe
             cross: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       # Nightly is required to build Rust std for some Tier-3 targets (e.g., mips64*)
       - uses: dtolnay/rust-toolchain@nightly
@@ -133,24 +133,24 @@ jobs:
         continue-on-error: true
         # Disable upx for mips. See https://github.com/upx/upx/issues/387
         if: matrix.os == 'ubuntu-latest' && !contains(matrix.target, 'mips')
-        uses: crazy-max/ghaction-upx@v1
+        uses: crazy-max/ghaction-upx@v4
         with:
           version: v4.0.2
           files: target/${{ matrix.target }}/release/${{ matrix.exe }}
           args: -q --best --lzma
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: rathole-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/${{ matrix.exe }}
       - name: Zip Release
-        uses: TheDoctor0/zip-release@0.6.1
+        uses: TheDoctor0/zip-release@0.7.6
         with:
           type: zip
           filename: rathole-${{ matrix.target }}.zip
           directory: target/${{ matrix.target }}/release/
           path: ${{ matrix.exe }}
       - name: Publish
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: target/${{ matrix.target }}/release/rathole-${{ matrix.target }}.zip
