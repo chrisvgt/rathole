@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # Maintain dependencies for Rust crates
+  # Maintain dependencies for Rust crates (Cargo.toml / Cargo.lock)
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
