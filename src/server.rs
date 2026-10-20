@@ -10,10 +10,9 @@ use crate::protocol::{
 };
 use crate::transport::{SocketOpts, TcpTransport, Transport};
 use anyhow::{anyhow, bail, Context, Result};
-use backoff::backoff::Backoff;
-use backoff::ExponentialBackoff;
+use crate::backoff::ExponentialBackoff;
+use subtle::ConstantTimeEq;
 
-use rand::RngCore;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -286,14 +285,14 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
 
     // Generate a nonce
     let mut nonce = vec![0u8; HASH_WIDTH_IN_BYTES];
-    rand::thread_rng().fill_bytes(&mut nonce);
+    rand::fill(&mut nonce[..]);
 
     // Send hello
     let hello_send = Hello::ControlChannelHello(
         protocol::CURRENT_PROTO_VERSION,
         nonce.clone().try_into().unwrap(),
     );
-    conn.write_all(&bincode::serialize(&hello_send).unwrap())
+    conn.write_all(&postcard::to_stdvec(&hello_send).unwrap())
         .await?;
     conn.flush().await?;
 
@@ -301,7 +300,7 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
     let service_config = match services.read().await.get(&service_digest) {
         Some(v) => v,
         None => {
-            conn.write_all(&bincode::serialize(&Ack::ServiceNotExist).unwrap())
+            conn.write_all(&postcard::to_stdvec(&Ack::ServiceNotExist).unwrap())
                 .await?;
             bail!("No such a service {}", hex::encode(service_digest));
         }
@@ -319,8 +318,8 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
 
     // Validate
     let session_key = protocol::digest(&concat);
-    if session_key != d {
-        conn.write_all(&bincode::serialize(&Ack::AuthFailed).unwrap())
+    if !bool::from(session_key.ct_eq(&d)) {
+        conn.write_all(&postcard::to_stdvec(&Ack::AuthFailed).unwrap())
             .await?;
         debug!(
             "Expect {}, but got {}",
@@ -343,7 +342,7 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
         }
 
         // Send ack
-        conn.write_all(&bincode::serialize(&Ack::Ok).unwrap())
+        conn.write_all(&postcard::to_stdvec(&Ack::Ok).unwrap())
             .await?;
         conn.flush().await?;
 
@@ -506,8 +505,8 @@ impl<T: Transport> ControlChannel<T> {
     // Run a control channel
     #[instrument(skip_all)]
     async fn run(mut self) -> Result<()> {
-        let create_ch_cmd = bincode::serialize(&ControlChannelCmd::CreateDataChannel).unwrap();
-        let heartbeat = bincode::serialize(&ControlChannelCmd::HeartBeat).unwrap();
+        let create_ch_cmd = postcard::to_stdvec(&ControlChannelCmd::CreateDataChannel).unwrap();
+        let heartbeat = postcard::to_stdvec(&ControlChannelCmd::HeartBeat).unwrap();
 
         // Wait for data channel requests and the shutdown signal
         loop {
@@ -630,7 +629,7 @@ async fn run_tcp_connection_pool<T: Transport>(
     shutdown_rx: broadcast::Receiver<bool>,
 ) -> Result<()> {
     let mut visitor_rx = tcp_listen_and_send(bind_addr, data_ch_req_tx.clone(), shutdown_rx);
-    let cmd = bincode::serialize(&DataChannelCmd::StartForwardTcp).unwrap();
+    let cmd = postcard::to_stdvec(&DataChannelCmd::StartForwardTcp).unwrap();
 
     'pool: while let Some(mut visitor) = visitor_rx.recv().await {
         loop {
@@ -678,7 +677,7 @@ async fn run_udp_connection_pool<T: Transport>(
 
     info!("Listening at {}", &bind_addr);
 
-    let cmd = bincode::serialize(&DataChannelCmd::StartForwardUdp).unwrap();
+    let cmd = postcard::to_stdvec(&DataChannelCmd::StartForwardUdp).unwrap();
 
     // Receive one data channel
     let mut conn = data_ch_rx
