@@ -11,6 +11,7 @@ use crate::protocol::{
 use crate::transport::{SocketOpts, TcpTransport, Transport};
 use anyhow::{anyhow, bail, Context, Result};
 use backoff::backoff::Backoff;
+use subtle::ConstantTimeEq;
 use backoff::ExponentialBackoff;
 
 use rand::RngCore;
@@ -319,7 +320,7 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
 
     // Validate
     let session_key = protocol::digest(&concat);
-    if session_key != d {
+    if !bool::from(session_key.ct_eq(&d)) {
         conn.write_all(&bincode::serialize(&Ack::AuthFailed).unwrap())
             .await?;
         debug!(
