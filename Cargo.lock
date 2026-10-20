@@ -1666,7 +1666,7 @@ dependencies = [
 
 [[package]]
 name = "rathole"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "async-http-proxy",
@@ -1693,7 +1693,7 @@ dependencies = [
  "serde",
  "sha2",
  "snowstorm",
- "socket2 0.4.10",
+ "socket2 0.6.5",
  "tokio",
  "tokio-native-tls",
  "tokio-rustls",
@@ -2041,16 +2041,6 @@ dependencies = [
  "snow",
  "thiserror",
  "tokio",
-]
-
-[[package]]
-name = "socket2"
-version = "0.4.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f7916fc008ca5542385b89a3d3ce689953c143e9304a9bf8beec1de48994c0d"
-dependencies = [
- "libc",
- "winapi",
 ]
 
 [[package]]
