@@ -87,10 +87,10 @@ codegen-units = 1
 tokio = { version = "1", features = ["full"] }
 bytes = { version = "1", features = ["serde"] }
 clap = { version = "4.6", features = ["derive"] }
-toml = "0.5"
+toml = "1.1"
 serde = { version = "1.0", features = ["derive"] }
 anyhow = "1.0"
-sha2 = "0.10"
+sha2 = "0.11"
 postcard = { version = "1", default-features = false, features = ["use-std"] }
 lazy_static = "1.4"
 hex = "0.4"
@@ -98,13 +98,13 @@ subtle = "2"
 rand = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-socket2 = { version = "0.4", features = ["all"] }
+socket2 = { version = "0.6", features = ["all"] }
 fdlimit = "0.2"
 async-trait = "0.1"
 snowstorm = { version = "0.4", optional = true, features = [
     "stream",
 ], default-features = false }
-base64 = { version = "0.13", optional = true }
+base64 = { version = "0.22", optional = true }
 notify = { version = "5.0.0-pre.13", optional = true }
 console-subscriber = { version = "0.1", optional = true, features = [
     "parking_lot",
