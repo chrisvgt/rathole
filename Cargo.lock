@@ -1736,7 +1736,7 @@ dependencies = [
  "async-http-proxy",
  "async-socks5",
  "async-trait",
- "base64 0.13.1",
+ "base64 0.22.1",
  "bytes",
  "clap",
  "console-subscriber",
