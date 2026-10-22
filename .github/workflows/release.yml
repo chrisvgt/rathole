@@ -156,9 +156,9 @@ jobs:
           files: target/${{ matrix.target }}/release/rathole-${{ matrix.target }}.zip
           generate_release_notes: true
           body: |
-            > [!WARNING]
-            > **Breaking change:** The wire protocol changed (bincode was replaced by postcard, protocol version 2).
-            > Client and server must both be updated to this version. Mixed versions cannot connect.
+            **Breaking:** the wire protocol changed. Client and server must both run this version.
+
+            Also: Noise config is now validated at load time (only NK, KK, XK and IK are accepted), the token check is constant-time, and `bincode`, `backoff` and `atty` are gone.
           draft: true
   # docker:
   #   name: Publish to Docker Hub
