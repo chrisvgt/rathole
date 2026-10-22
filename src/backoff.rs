@@ -1,4 +1,3 @@
-use rand::Rng;
 use std::future::Future;
 use std::time::{Duration, Instant};
 use tokio::time;
@@ -47,7 +46,7 @@ impl ExponentialBackoff {
         let current = self.current_interval.as_secs_f64();
         let delta = self.randomization_factor * current;
         let (min, max) = (current - delta, current + delta);
-        let next = min + rand::thread_rng().gen::<f64>() * (max - min);
+        let next = min + rand::random::<f64>() * (max - min);
 
         self.increment_current_interval();
         Some(Duration::from_secs_f64(next.max(0.0)))

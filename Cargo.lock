@@ -1841,7 +1841,7 @@ dependencies = [
  "openssl",
  "p12",
  "postcard",
- "rand 0.8.8",
+ "rand 0.10.3",
  "rustls-native-certs",
  "rustls-pemfile",
  "serde",
