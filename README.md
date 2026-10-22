@@ -2,16 +2,16 @@
 
 ![rathole-logo](./docs/img/rathole-logo.png)
 
-[![GitHub stars](https://img.shields.io/github/stars/rapiz1/rathole)](https://github.com/rapiz1/rathole/stargazers)
-[![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/rapiz1/rathole)](https://github.com/rapiz1/rathole/releases)
-![GitHub Workflow Status (branch)](https://img.shields.io/github/actions/workflow/status/rapiz1/rathole/rust.yml?branch=main)
-[![GitHub all releases](https://img.shields.io/github/downloads/rapiz1/rathole/total)](https://github.com/rapiz1/rathole/releases)
-[![Docker Pulls](https://img.shields.io/docker/pulls/rapiz1/rathole)](https://hub.docker.com/r/rapiz1/rathole)
-[![Join the chat at https://gitter.im/rapiz1/rathole](https://badges.gitter.im/rapiz1/rathole.svg)](https://gitter.im/rapiz1/rathole?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![GitHub stars](https://img.shields.io/github/stars/chrisvgt/rathole)](https://github.com/chrisvgt/rathole/stargazers)
+[![GitHub release](https://img.shields.io/github/v/release/chrisvgt/rathole)](https://github.com/chrisvgt/rathole/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/chrisvgt/rathole/rust.yml?branch=main)](https://github.com/chrisvgt/rathole/actions/workflows/rust.yml)
+[![GitHub downloads](https://img.shields.io/github/downloads/chrisvgt/rathole/total)](https://github.com/chrisvgt/rathole/releases)
 
 [English](README.md) | [简体中文](README-zh.md)
 
 A secure, stable and high-performance reverse proxy for NAT traversal, written in Rust
+
+This is a maintained fork of [rathole-org/rathole](https://github.com/rathole-org/rathole) (Apache-2.0). Dependencies are kept up to date and security issues are fixed. Releases are built from `main`; development happens on `develop`. Note that 0.6.0 changed the wire protocol, so client and server must be updated together.
 
 rathole, like [frp](https://github.com/fatedier/frp) and [ngrok](https://github.com/inconshreveable/ngrok), can help to expose the service on the device behind the NAT to the Internet, via a server with a public IP.
 
