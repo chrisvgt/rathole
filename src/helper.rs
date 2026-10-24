@@ -1,5 +1,5 @@
 use crate::backoff::{retry_notify, ExponentialBackoff};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use async_http_proxy::{http_connect_tokio, http_connect_tokio_with_basic_auth};
 use socket2::{SockRef, TcpKeepalive};
 use std::{future::Future, net::SocketAddr, time::Duration};
@@ -35,7 +35,7 @@ pub fn try_set_tcp_keepalive(
     Ok(s.set_tcp_keepalive(&keepalive)?)
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, clippy::panic)]
 pub fn feature_not_compile(feature: &str) -> ! {
     panic!(
         "The feature '{}' is not compiled in this binary. Please re-compile rathole",
@@ -43,7 +43,7 @@ pub fn feature_not_compile(feature: &str) -> ! {
     )
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, clippy::panic)]
 pub fn feature_neither_compile(feature1: &str, feature2: &str) -> ! {
     panic!(
         "Neither of the feature '{}' or '{}' is compiled in this binary. Please re-compile rathole",
@@ -59,7 +59,9 @@ pub async fn to_socket_addr<A: ToSocketAddrs>(addr: A) -> Result<SocketAddr> {
 }
 
 pub fn host_port_pair(s: &str) -> Result<(&str, u16)> {
-    let semi = s.rfind(':').expect("missing semicolon");
+    let semi = s
+        .rfind(':')
+        .ok_or_else(|| anyhow!("missing colon in {s}"))?;
     Ok((&s[..semi], s[semi + 1..].parse()?))
 }
 
@@ -114,8 +116,10 @@ pub async fn tcp_connect_with_proxy(
     if let Some(url) = proxy {
         let addr = &addr.addr;
         let mut s = TcpStream::connect((
-            url.host_str().expect("proxy url should have host field"),
-            url.port().expect("proxy url should have port field"),
+            url.host_str()
+                .ok_or_else(|| anyhow!("proxy url should have host field"))?,
+            url.port()
+                .ok_or_else(|| anyhow!("proxy url should have port field"))?,
         ))
         .await?;
 
@@ -147,7 +151,7 @@ pub async fn tcp_connect_with_proxy(
                     None => http_connect_tokio(&mut s, host, port).await?,
                 }
             }
-            _ => panic!("unknown proxy scheme"),
+            scheme => bail!("unknown proxy scheme {scheme}"),
         }
         Ok(s)
     } else {

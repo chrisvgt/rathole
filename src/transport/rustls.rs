@@ -37,13 +37,20 @@ fn load_server_config(config: &TlsConfig) -> Result<Option<ServerConfig>> {
     if let Some(pkcs12_path) = config.pkcs12.as_ref() {
         let buf = fs::read(pkcs12_path)?;
         let pfx = PFX::parse(buf.as_slice())?;
-        let pass = config.pkcs12_password.as_ref().unwrap();
+        let pass = config
+            .pkcs12_password
+            .as_ref()
+            .with_context(|| "Missing pkcs12_password")?;
 
         let certs = pfx.cert_bags(pass)?;
         let keys = pfx.key_bags(pass)?;
 
         let chain: Vec<CertificateDer> = certs.into_iter().map(CertificateDer::from).collect();
-        let key = PrivatePkcs8KeyDer::from(keys.into_iter().next().unwrap());
+        let key = PrivatePkcs8KeyDer::from(
+            keys.into_iter()
+                .next()
+                .with_context(|| "No private key found in the pkcs12 file")?,
+        );
 
         Ok(Some(
             ServerConfig::builder()
@@ -97,12 +104,8 @@ impl Transport for TlsTransport {
             .as_ref()
             .ok_or_else(|| anyhow!("Missing tls config"))?;
 
-        let connector = load_client_config(config)
-            .unwrap()
-            .map(|c| Arc::new(c).into());
-        let tls_acceptor = load_server_config(config)
-            .unwrap()
-            .map(|c| Arc::new(c).into());
+        let connector = load_client_config(config)?.map(|c| Arc::new(c).into());
+        let tls_acceptor = load_server_config(config)?.map(|c| Arc::new(c).into());
 
         Ok(TlsTransport {
             tcp,
@@ -131,14 +134,22 @@ impl Transport for TlsTransport {
     }
 
     async fn handshake(&self, conn: Self::RawStream) -> Result<Self::Stream> {
-        let conn = self.tls_acceptor.as_ref().unwrap().accept(conn).await?;
+        let conn = self
+            .tls_acceptor
+            .as_ref()
+            .with_context(|| "TLS acceptor is not configured")?
+            .accept(conn)
+            .await?;
         Ok(tokio_rustls::TlsStream::Server(conn))
     }
 
     async fn connect(&self, addr: &AddrMaybeCached) -> Result<Self::Stream> {
         let conn = self.tcp.connect(addr).await?;
 
-        let connector = self.connector.as_ref().unwrap();
+        let connector = self
+            .connector
+            .as_ref()
+            .with_context(|| "TLS connector is not configured")?;
 
         let host_name = self
             .config

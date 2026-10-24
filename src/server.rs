@@ -1,3 +1,4 @@
+use crate::backoff::ExponentialBackoff;
 use crate::config::{Config, ServerConfig, ServerServiceConfig, ServiceType, TransportType};
 use crate::config_watcher::{ConfigChange, ServerServiceChange};
 use crate::constants::{listen_backoff, UDP_BUFFER_SIZE};
@@ -10,7 +11,6 @@ use crate::protocol::{
 };
 use crate::transport::{SocketOpts, TcpTransport, Transport};
 use anyhow::{anyhow, bail, Context, Result};
-use crate::backoff::ExponentialBackoff;
 use subtle::ConstantTimeEq;
 
 use std::collections::HashMap;
@@ -290,17 +290,19 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
     // Send hello
     let hello_send = Hello::ControlChannelHello(
         protocol::CURRENT_PROTO_VERSION,
-        nonce.clone().try_into().unwrap(),
+        nonce
+            .clone()
+            .try_into()
+            .map_err(|_| anyhow!("Invalid nonce length"))?,
     );
-    conn.write_all(&postcard::to_stdvec(&hello_send).unwrap())
-        .await?;
+    conn.write_all(&protocol::encode(&hello_send)?).await?;
     conn.flush().await?;
 
     // Lookup the service
     let service_config = match services.read().await.get(&service_digest) {
         Some(v) => v,
         None => {
-            conn.write_all(&postcard::to_stdvec(&Ack::ServiceNotExist).unwrap())
+            conn.write_all(&protocol::encode(&Ack::ServiceNotExist)?)
                 .await?;
             bail!("No such a service {}", hex::encode(service_digest));
         }
@@ -310,7 +312,13 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
     let service_name = &service_config.name;
 
     // Calculate the checksum
-    let mut concat = Vec::from(service_config.token.as_ref().unwrap().as_bytes());
+    let mut concat = Vec::from(
+        service_config
+            .token
+            .as_ref()
+            .with_context(|| "Missing token")?
+            .as_bytes(),
+    );
     concat.append(&mut nonce);
 
     // Read auth
@@ -319,8 +327,7 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
     // Validate
     let session_key = protocol::digest(&concat);
     if !bool::from(session_key.ct_eq(&d)) {
-        conn.write_all(&postcard::to_stdvec(&Ack::AuthFailed).unwrap())
-            .await?;
+        conn.write_all(&protocol::encode(&Ack::AuthFailed)?).await?;
         debug!(
             "Expect {}, but got {}",
             hex::encode(session_key),
@@ -342,8 +349,7 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
         }
 
         // Send ack
-        conn.write_all(&postcard::to_stdvec(&Ack::Ok).unwrap())
-            .await?;
+        conn.write_all(&protocol::encode(&Ack::Ok)?).await?;
         conn.flush().await?;
 
         info!(service = %service_config.name, "Control channel established");
@@ -505,8 +511,8 @@ impl<T: Transport> ControlChannel<T> {
     // Run a control channel
     #[instrument(skip_all)]
     async fn run(mut self) -> Result<()> {
-        let create_ch_cmd = postcard::to_stdvec(&ControlChannelCmd::CreateDataChannel).unwrap();
-        let heartbeat = postcard::to_stdvec(&ControlChannelCmd::HeartBeat).unwrap();
+        let create_ch_cmd = protocol::encode(&ControlChannelCmd::CreateDataChannel)?;
+        let heartbeat = protocol::encode(&ControlChannelCmd::HeartBeat)?;
 
         // Wait for data channel requests and the shutdown signal
         loop {
@@ -629,7 +635,7 @@ async fn run_tcp_connection_pool<T: Transport>(
     shutdown_rx: broadcast::Receiver<bool>,
 ) -> Result<()> {
     let mut visitor_rx = tcp_listen_and_send(bind_addr, data_ch_req_tx.clone(), shutdown_rx);
-    let cmd = postcard::to_stdvec(&DataChannelCmd::StartForwardTcp).unwrap();
+    let cmd = protocol::encode(&DataChannelCmd::StartForwardTcp)?;
 
     'pool: while let Some(mut visitor) = visitor_rx.recv().await {
         loop {
@@ -677,7 +683,7 @@ async fn run_udp_connection_pool<T: Transport>(
 
     info!("Listening at {}", &bind_addr);
 
-    let cmd = postcard::to_stdvec(&DataChannelCmd::StartForwardUdp).unwrap();
+    let cmd = protocol::encode(&DataChannelCmd::StartForwardUdp)?;
 
     // Receive one data channel
     let mut conn = data_ch_rx

@@ -53,12 +53,13 @@ impl Transport for TlsTransport {
             Some(path) => {
                 let ident = Identity::from_pkcs12(
                     &fs::read(path)?,
-                    config.pkcs12_password.as_ref().unwrap(),
+                    config
+                        .pkcs12_password
+                        .as_ref()
+                        .with_context(|| "Missing pkcs12_password")?,
                 )
                 .with_context(|| "Failed to create identitiy")?;
-                Some(TlsAcceptor::from(
-                    native_tls::TlsAcceptor::new(ident).unwrap(),
-                ))
+                Some(TlsAcceptor::from(native_tls::TlsAcceptor::new(ident)?))
             }
             None => None,
         };
@@ -90,14 +91,22 @@ impl Transport for TlsTransport {
     }
 
     async fn handshake(&self, conn: Self::RawStream) -> Result<Self::Stream> {
-        let conn = self.tls_acceptor.as_ref().unwrap().accept(conn).await?;
+        let conn = self
+            .tls_acceptor
+            .as_ref()
+            .with_context(|| "TLS acceptor is not configured")?
+            .accept(conn)
+            .await?;
         Ok(conn)
     }
 
     async fn connect(&self, addr: &AddrMaybeCached) -> Result<Self::Stream> {
         let conn = self.tcp.connect(addr).await?;
 
-        let connector = self.connector.as_ref().unwrap();
+        let connector = self
+            .connector
+            .as_ref()
+            .with_context(|| "TLS connector is not configured")?;
         Ok(connector
             .connect(
                 self.config
