@@ -2,7 +2,7 @@ use crate::{
     config::{ClientConfig, ClientServiceConfig, ServerConfig, ServerServiceConfig},
     Config,
 };
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use std::{
     collections::HashMap,
     env,
@@ -105,7 +105,7 @@ impl ConfigWatcherHandle {
         // Initial start
         event_tx
             .send(ConfigChange::General(Box::new(origin_cfg.clone())))
-            .unwrap();
+            .map_err(|_| anyhow!("Failed to queue the initial config"))?;
 
         tokio::spawn(config_watcher(
             path.to_owned(),
@@ -145,7 +145,9 @@ async fn config_watcher(
     } else {
         env::current_dir()?.join(path)
     };
-    let parent_path = path.parent().expect("config file should have a parent dir");
+    let parent_path = path
+        .parent()
+        .with_context(|| "config file should have a parent dir")?;
     let path_clone = path.clone();
     let mut watcher =
         notify::recommended_watcher(move |res: Result<notify::Event, _>| match res {
@@ -212,23 +214,21 @@ fn calculate_events(old: &Config, new: &Config) -> Option<Vec<ConfigChange>> {
 
     let mut ret = vec![];
 
-    if old.server != new.server {
-        match calculate_instance_config_events(
-            old.server.as_ref().unwrap(),
-            new.server.as_ref().unwrap(),
-        ) {
-            Some(mut v) => ret.append(&mut v),
-            None => return Some(vec![ConfigChange::General(Box::new(new.clone()))]),
+    if let (Some(old_server), Some(new_server)) = (&old.server, &new.server) {
+        if old_server != new_server {
+            match calculate_instance_config_events(old_server, new_server) {
+                Some(mut v) => ret.append(&mut v),
+                None => return Some(vec![ConfigChange::General(Box::new(new.clone()))]),
+            }
         }
     }
 
-    if old.client != new.client {
-        match calculate_instance_config_events(
-            old.client.as_ref().unwrap(),
-            new.client.as_ref().unwrap(),
-        ) {
-            Some(mut v) => ret.append(&mut v),
-            None => return Some(vec![ConfigChange::General(Box::new(new.clone()))]),
+    if let (Some(old_client), Some(new_client)) = (&old.client, &new.client) {
+        if old_client != new_client {
+            match calculate_instance_config_events(old_client, new_client) {
+                Some(mut v) => ret.append(&mut v),
+                None => return Some(vec![ConfigChange::General(Box::new(new.clone()))]),
+            }
         }
     }
 

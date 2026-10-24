@@ -79,7 +79,7 @@ impl UdpTraffic {
             len: self.data.len() as UdpPacketLen,
         };
 
-        let v = postcard::to_stdvec(&hdr).unwrap();
+        let v = encode(&hdr)?;
 
         trace!("Write {:?} of length {}", hdr, v.len());
         writer.write_u8(v.len() as u8).await?;
@@ -101,7 +101,7 @@ impl UdpTraffic {
             len: data.len() as UdpPacketLen,
         };
 
-        let v = postcard::to_stdvec(&hdr).unwrap();
+        let v = encode(&hdr)?;
 
         trace!("Write {:?} of length {}", hdr, v.len());
         writer.write_u8(v.len() as u8).await?;
@@ -135,6 +135,11 @@ impl UdpTraffic {
     }
 }
 
+/// Serialize a protocol message to its wire format
+pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>> {
+    Ok(postcard::to_stdvec(value)?)
+}
+
 pub fn digest(data: &[u8]) -> Digest {
     use sha2::{Digest, Sha256};
     let d = Sha256::new().chain_update(data).finalize();
@@ -150,6 +155,8 @@ struct PacketLength {
 }
 
 impl PacketLength {
+    // Serializing these fixed-size messages cannot fail
+    #[allow(clippy::unwrap_used)]
     pub fn new() -> PacketLength {
         let username = "default";
         let d = digest(username.as_bytes());
