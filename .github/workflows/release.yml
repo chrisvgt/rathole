@@ -141,9 +141,11 @@ jobs:
           files: target/${{ matrix.target }}/release/rathole-${{ matrix.target }}.zip
           generate_release_notes: true
           body: |
-            **Breaking:** the wire protocol changed. Client and server must both run this version.
+            Fixes and dependency updates, no protocol change (compatible with 0.6.0).
 
-            Also: Noise config is now validated at load time (only NK, KK, XK and IK are accepted), the token check is constant-time, and `bincode`, `backoff` and `atty` are gone.
+            - The client no longer aborts on a failed websocket handshake, broken certificate files or a missing pkcs12 password; these now return errors.
+            - Config reload no longer panics when only one of `[server]` or `[client]` changes.
+            - Removed unmaintained and vulnerable dependencies (`rustls-pemfile`, `h2` 0.3, `libgit2`). `cargo audit` is clean.
           draft: true
   # docker:
   #   name: Publish to Docker Hub
