@@ -1,7 +1,7 @@
 use anyhow::Result;
-use std::io::IsTerminal;
 use clap::Parser;
 use rathole::{run, Cli};
+use std::io::IsTerminal;
 use tokio::{signal, sync::broadcast};
 use tracing_subscriber::EnvFilter;
 
@@ -10,6 +10,8 @@ async fn main() -> Result<()> {
     let args = Cli::parse();
 
     let (shutdown_tx, shutdown_rx) = broadcast::channel::<bool>(1);
+    // Failing here leaves no way to shut down cleanly, so aborting is intended
+    #[allow(clippy::panic)]
     tokio::spawn(async move {
         if let Err(e) = signal::ctrl_c().await {
             // Something really weird happened. So just panic

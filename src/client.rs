@@ -1,3 +1,4 @@
+use crate::backoff::{retry_notify, ExponentialBackoff};
 use crate::config::{ClientConfig, ClientServiceConfig, Config, ServiceType, TransportType};
 use crate::config_watcher::{ClientServiceChange, ConfigChange};
 use crate::helper::udp_connect;
@@ -8,7 +9,6 @@ use crate::protocol::{
 };
 use crate::transport::{AddrMaybeCached, SocketOpts, TcpTransport, Transport};
 use anyhow::{anyhow, bail, Context, Result};
-use crate::backoff::{retry_notify, ExponentialBackoff};
 use bytes::{Bytes, BytesMut};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -200,10 +200,11 @@ async fn do_data_channel_handshake<T: Transport>(
     T::hint(&conn, args.socket_opts);
 
     // Send nonce
-    let v: &[u8; HASH_WIDTH_IN_BYTES] = args.session_key[..].try_into().unwrap();
-    let hello = Hello::DataChannelHello(CURRENT_PROTO_VERSION, v.to_owned());
-    conn.write_all(&postcard::to_stdvec(&hello).unwrap())
-        .await?;
+    let session_key: [u8; HASH_WIDTH_IN_BYTES] = args.session_key[..]
+        .try_into()
+        .with_context(|| "Invalid session key length")?;
+    let hello = Hello::DataChannelHello(CURRENT_PROTO_VERSION, session_key);
+    conn.write_all(&protocol::encode(&hello)?).await?;
     conn.flush().await?;
 
     Ok(conn)
@@ -418,10 +419,8 @@ impl<T: 'static + Transport> ControlChannel<T> {
 
         // Send hello
         debug!("Sending hello");
-        let hello_send =
-            Hello::ControlChannelHello(CURRENT_PROTO_VERSION, self.digest[..].try_into().unwrap());
-        conn.write_all(&postcard::to_stdvec(&hello_send).unwrap())
-            .await?;
+        let hello_send = Hello::ControlChannelHello(CURRENT_PROTO_VERSION, self.digest);
+        conn.write_all(&protocol::encode(&hello_send)?).await?;
         conn.flush().await?;
 
         // Read hello
@@ -435,12 +434,18 @@ impl<T: 'static + Transport> ControlChannel<T> {
 
         // Send auth
         debug!("Sending auth");
-        let mut concat = Vec::from(self.service.token.as_ref().unwrap().as_bytes());
+        let mut concat = Vec::from(
+            self.service
+                .token
+                .as_ref()
+                .with_context(|| "Missing token")?
+                .as_bytes(),
+        );
         concat.extend_from_slice(&nonce);
 
         let session_key = protocol::digest(&concat);
         let auth = Auth(session_key);
-        conn.write_all(&postcard::to_stdvec(&auth).unwrap()).await?;
+        conn.write_all(&protocol::encode(&auth)?).await?;
         conn.flush().await?;
 
         // Read ack
@@ -510,7 +515,11 @@ impl ControlChannelHandle {
         info!("Starting {}", hex::encode(digest));
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
-        let mut retry_backoff = run_control_chan_backoff(service.retry_interval.unwrap());
+        let mut retry_backoff = run_control_chan_backoff(
+            service
+                .retry_interval
+                .unwrap_or(crate::config::DEFAULT_CLIENT_RETRY_INTERVAL_SECS),
+        );
 
         let mut s = ControlChannel {
             digest,
@@ -543,8 +552,9 @@ impl ControlChannelHandle {
                         error!("{:#}. Retry in {:?}...", err, duration);
                         time::sleep(duration).await;
                     } else {
-                        // Should never reach
-                        panic!("{:#}. Break", err);
+                        // The backoff has no deadline, so this is not expected to happen
+                        error!("{:#}. Giving up", err);
+                        break;
                     }
 
                     start = Instant::now();

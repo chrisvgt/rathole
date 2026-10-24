@@ -13,7 +13,7 @@ use cli::KeypairType;
 pub use config::Config;
 pub use constants::UDP_BUFFER_SIZE;
 
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, info};
 
@@ -70,7 +70,10 @@ pub async fn run(args: Cli, shutdown_rx: broadcast::Receiver<bool>) -> Result<()
     fdlimit::raise_fd_limit();
 
     // Spawn a config watcher. The watcher will send a initial signal to start the instance with a config
-    let config_path = args.config_path.as_ref().unwrap();
+    let config_path = args
+        .config_path
+        .as_ref()
+        .with_context(|| "Missing config path")?;
     let mut cfg_watcher = ConfigWatcherHandle::new(config_path, shutdown_rx).await?;
 
     // shutdown_tx owns the instance
@@ -123,7 +126,7 @@ async fn run_instance(
     service_update: mpsc::Receiver<ConfigChange>,
 ) -> Result<()> {
     match determine_run_mode(&config, &args) {
-        RunMode::Undetermine => panic!("Cannot determine running as a server or a client"),
+        RunMode::Undetermine => bail!("Cannot determine running as a server or a client"),
         RunMode::Client => {
             #[cfg(not(feature = "client"))]
             crate::helper::feature_not_compile("client");

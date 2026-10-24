@@ -14,7 +14,7 @@ const DEFAULT_HEARTBEAT_INTERVAL_SECS: u64 = 30;
 const DEFAULT_HEARTBEAT_TIMEOUT_SECS: u64 = 40;
 
 /// Client
-const DEFAULT_CLIENT_RETRY_INTERVAL_SECS: u64 = 1;
+pub const DEFAULT_CLIENT_RETRY_INTERVAL_SECS: u64 = 1;
 
 /// String with Debug implementation that emits "MASKED"
 /// Used to mask sensitive strings when logging
