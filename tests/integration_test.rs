@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use anyhow::{Ok, Result};
 use common::{run_rathole_client, PING, PONG};
 use std::time::Duration;

@@ -6,7 +6,7 @@ use std::task::{ready, Context, Poll};
 
 use super::{AddrMaybeCached, SocketOpts, TcpTransport, TlsTransport, Transport};
 use crate::config::TransportConfig;
-use anyhow::anyhow;
+use anyhow::{anyhow, Context as _};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures_core::stream::Stream;
@@ -27,7 +27,7 @@ use url::Url;
 #[derive(Debug)]
 enum TransportStream {
     Insecure(TcpStream),
-    Secure(TlsStream<TcpStream>),
+    Secure(Box<TlsStream<TcpStream>>),
 }
 
 impl TransportStream {
@@ -224,7 +224,7 @@ impl Transport for WebsocketTransport {
     async fn handshake(&self, conn: Self::RawStream) -> anyhow::Result<Self::Stream> {
         let tsream = match &self.sub {
             SubTransport::Insecure(t) => TransportStream::Insecure(t.handshake(conn).await?),
-            SubTransport::Secure(t) => TransportStream::Secure(t.handshake(conn).await?),
+            SubTransport::Secure(t) => TransportStream::Secure(Box::new(t.handshake(conn).await?)),
         };
         let wsstream = accept_async_with_config(tsream, Some(self.conf)).await?;
         let tun = WebsocketTunnel {
@@ -235,14 +235,14 @@ impl Transport for WebsocketTransport {
 
     async fn connect(&self, addr: &AddrMaybeCached) -> anyhow::Result<Self::Stream> {
         let u = format!("ws://{}", addr.addr.as_str());
-        let url = Url::parse(&u).unwrap();
+        let url = Url::parse(&u).with_context(|| format!("invalid websocket url {u}"))?;
         let tstream = match &self.sub {
             SubTransport::Insecure(t) => TransportStream::Insecure(t.connect(addr).await?),
-            SubTransport::Secure(t) => TransportStream::Secure(t.connect(addr).await?),
+            SubTransport::Secure(t) => TransportStream::Secure(Box::new(t.connect(addr).await?)),
         };
         let (wsstream, _) = client_async_with_config(url.as_str(), tstream, Some(self.conf))
             .await
-            .expect("failed to connect");
+            .with_context(|| "failed to complete the websocket handshake")?;
         let tun = WebsocketTunnel {
             inner: StreamReader::new(StreamWrapper { inner: wsstream }),
         };
