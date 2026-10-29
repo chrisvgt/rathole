@@ -108,6 +108,8 @@ The server needs `local_private_key`, and the client needs the server's `remote_
 
 ### Bidirectional Authentication
 
+With `NK`, anyone who knows the server's public key can finish the handshake and try tokens. With `KK` the client needs its own private key as well, so a stranger fails at the handshake before any token is checked. Generate a second keypair with `rathole --genkey` for the client. This is recommended when the tunnel carries sensitive services.
+
 ```toml
 # Server Side Configuration
 [server.transport.noise]

@@ -7,6 +7,7 @@ use std::net::SocketAddr;
 use std::ops::{Deref, RangeInclusive};
 use std::path::Path;
 use tokio::fs;
+use tracing::warn;
 use url::Url;
 
 use crate::transport::{DEFAULT_KEEPALIVE_INTERVAL, DEFAULT_KEEPALIVE_SECS, DEFAULT_NODELAY};
@@ -17,6 +18,11 @@ const DEFAULT_HEARTBEAT_TIMEOUT_SECS: u64 = 40;
 
 /// Client
 pub const DEFAULT_CLIENT_RETRY_INTERVAL_SECS: u64 = 1;
+
+/// Tokens shorter than this get a warning. Anyone who can finish the
+/// transport handshake can try tokens, and without encryption it is the only
+/// protection
+const MIN_TOKEN_LEN: usize = 16;
 
 /// String with Debug implementation that emits "MASKED"
 /// Used to mask sensitive strings when logging
@@ -367,6 +373,33 @@ pub struct ServerConfig {
     pub heartbeat_interval: u64,
 }
 
+/// Names of the services whose token is shorter than `MIN_TOKEN_LEN`, sorted
+fn weak_tokens<'a>(
+    services: impl Iterator<Item = (&'a String, &'a Option<MaskedString>)>,
+) -> Vec<&'a str> {
+    let mut names: Vec<_> = services
+        .filter(|(_, token)| {
+            token
+                .as_ref()
+                .is_some_and(|t| t.chars().count() < MIN_TOKEN_LEN)
+        })
+        .map(|(name, _)| name.as_str())
+        .collect();
+    names.sort();
+    names
+}
+
+fn warn_weak_tokens<'a>(services: impl Iterator<Item = (&'a String, &'a Option<MaskedString>)>) {
+    let names = weak_tokens(services);
+    if !names.is_empty() {
+        warn!(
+            "The token of {} is shorter than {} characters. Use a long random token, e.g. from `openssl rand -base64 32`",
+            names.join(", "),
+            MIN_TOKEN_LEN
+        );
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -380,10 +413,12 @@ impl Config {
 
         if let Some(server) = config.server.as_mut() {
             Config::validate_server_config(server)?;
+            warn_weak_tokens(server.services.values().map(|s| (&s.name, &s.token)));
         }
 
         if let Some(client) = config.client.as_mut() {
             Config::validate_client_config(client)?;
+            warn_weak_tokens(client.services.values().map(|s| (&s.name, &s.token)));
         }
 
         if config.server.is_none() && config.client.is_none() {
@@ -841,5 +876,20 @@ mod tests {
             true
         )
         .is_ok());
+    }
+
+    #[test]
+    fn test_weak_tokens() {
+        let services = [
+            ("b".to_string(), Some(MaskedString::from("123"))),
+            ("a".to_string(), Some(MaskedString::from("123456789012345"))),
+            (
+                "c".to_string(),
+                Some(MaskedString::from("1234567890123456")),
+            ),
+            ("d".to_string(), None),
+        ];
+        let names = weak_tokens(services.iter().map(|(n, t)| (n, t)));
+        assert_eq!(names, ["a", "b"]);
     }
 }
