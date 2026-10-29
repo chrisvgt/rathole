@@ -4,7 +4,8 @@
 #
 #   benches/scripts/compare.sh v0.6.1 v0.6.2 v0.6.3
 #
-# FRP_VERSION selects the frp release (default: latest). WORK_DIR keeps the
+# FRP_VERSIONS lists the frp releases to compare, "latest" is the newest one
+# (default: latest), e.g. FRP_VERSIONS="0.38.0 latest". WORK_DIR keeps the
 # binaries between runs (default: target/bench-compare). Extra arguments for
 # the benchmark go after "--", e.g. "-- --duration 10".
 set -eu
@@ -47,19 +48,27 @@ x86_64) FRP_ARCH=amd64 ;;
 aarch64) FRP_ARCH=arm64 ;;
 *) FRP_ARCH=$(uname -m) ;;
 esac
-FRP_VERSION=${FRP_VERSION:-$(gh release view -R fatedier/frp --json tagName -q .tagName)}
-FRP_VERSION=${FRP_VERSION#v}
-FRP_NAME="frp_${FRP_VERSION}_linux_$FRP_ARCH"
-FRP_DIR="$WORK_DIR/$FRP_NAME"
-if [ ! -x "$FRP_DIR/frps" ]; then
-	echo "Downloading frp $FRP_VERSION" >&2
-	url="https://github.com/fatedier/frp/releases/download/v$FRP_VERSION"
-	curl -fsSL -o "$WORK_DIR/$FRP_NAME.tar.gz" "$url/$FRP_NAME.tar.gz"
-	curl -fsSL -o "$WORK_DIR/frp_sha256_checksums.txt" "$url/frp_sha256_checksums.txt"
-	(cd "$WORK_DIR" && grep " $FRP_NAME.tar.gz\$" frp_sha256_checksums.txt | sha256sum -c -)
-	tar -xzf "$WORK_DIR/$FRP_NAME.tar.gz" -C "$WORK_DIR"
-fi
-ARGS="$ARGS --frp v$FRP_VERSION=$FRP_DIR"
+for version in ${FRP_VERSIONS:-latest}; do
+	if [ "$version" = latest ]; then
+		version=$(gh release view -R fatedier/frp --json tagName -q .tagName)
+	fi
+	version=${version#v}
+	name="frp_${version}_linux_$FRP_ARCH"
+	dir="$WORK_DIR/$name"
+	if [ ! -x "$dir/frps" ]; then
+		echo "Downloading frp $version" >&2
+		url="https://github.com/fatedier/frp/releases/download/v$version"
+		curl -fsSL -o "$WORK_DIR/$name.tar.gz" "$url/$name.tar.gz"
+		# Older releases have no checksum file
+		if curl -fsSL -o "$WORK_DIR/frp_sha256_checksums.txt" "$url/frp_sha256_checksums.txt"; then
+			(cd "$WORK_DIR" && grep " $name.tar.gz\$" frp_sha256_checksums.txt | sha256sum -c -)
+		else
+			echo "frp $version publishes no checksums, relying on HTTPS only" >&2
+		fi
+		tar -xzf "$WORK_DIR/$name.tar.gz" -C "$WORK_DIR"
+	fi
+	ARGS="$ARGS --frp v$version=$dir"
+done
 
 # shellcheck disable=SC2086
 cargo bench --bench tunnel -- $ARGS "$@"

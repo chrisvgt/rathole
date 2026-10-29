@@ -546,26 +546,47 @@ async fn start_frp(
     let echo = free_port()?;
     let sink = free_port()?;
     let tls = transport == Transport::Tls;
+    let (local_echo, local_sink) = (services.echo.port(), services.sink.port());
 
-    let server_config = dir.join("frps.toml");
-    std::fs::write(
-        &server_config,
-        format!(
-            "bindAddr = \"127.0.0.1\"\nbindPort = {control}\nauth.token = \"{TOKEN}\"\nlog.level = \"warn\"\n"
-        ),
-    )?;
-    let client_config = dir.join("frpc.toml");
-    std::fs::write(
-        &client_config,
-        format!(
-            "serverAddr = \"127.0.0.1\"\nserverPort = {control}\nauth.token = \"{TOKEN}\"\n\
-             log.level = \"warn\"\ntransport.tls.enable = {tls}\n\n\
-             [[proxies]]\nname = \"echo\"\ntype = \"tcp\"\nlocalIP = \"127.0.0.1\"\nlocalPort = {}\nremotePort = {echo}\n\n\
-             [[proxies]]\nname = \"sink\"\ntype = \"tcp\"\nlocalIP = \"127.0.0.1\"\nlocalPort = {}\nremotePort = {sink}\n",
-            services.echo.port(),
-            services.sink.port()
-        ),
-    )?;
+    let (server_config, client_config) = if frp_has_toml(frp_dir)? {
+        let server_config = dir.join("frps.toml");
+        std::fs::write(
+            &server_config,
+            format!(
+                "bindAddr = \"127.0.0.1\"\nbindPort = {control}\nauth.token = \"{TOKEN}\"\nlog.level = \"warn\"\n"
+            ),
+        )?;
+        let client_config = dir.join("frpc.toml");
+        std::fs::write(
+            &client_config,
+            format!(
+                "serverAddr = \"127.0.0.1\"\nserverPort = {control}\nauth.token = \"{TOKEN}\"\n\
+                 log.level = \"warn\"\ntransport.tls.enable = {tls}\n\n\
+                 [[proxies]]\nname = \"echo\"\ntype = \"tcp\"\nlocalIP = \"127.0.0.1\"\nlocalPort = {local_echo}\nremotePort = {echo}\n\n\
+                 [[proxies]]\nname = \"sink\"\ntype = \"tcp\"\nlocalIP = \"127.0.0.1\"\nlocalPort = {local_sink}\nremotePort = {sink}\n"
+            ),
+        )?;
+        (server_config, client_config)
+    } else {
+        let server_config = dir.join("frps.ini");
+        std::fs::write(
+            &server_config,
+            format!(
+                "[common]\nbind_addr = 127.0.0.1\nbind_port = {control}\ntoken = {TOKEN}\nlog_level = warn\n"
+            ),
+        )?;
+        let client_config = dir.join("frpc.ini");
+        std::fs::write(
+            &client_config,
+            format!(
+                "[common]\nserver_addr = 127.0.0.1\nserver_port = {control}\ntoken = {TOKEN}\n\
+                 log_level = warn\ntls_enable = {tls}\n\n\
+                 [echo]\ntype = tcp\nlocal_ip = 127.0.0.1\nlocal_port = {local_echo}\nremote_port = {echo}\n\n\
+                 [sink]\ntype = tcp\nlocal_ip = 127.0.0.1\nlocal_port = {local_sink}\nremote_port = {sink}\n"
+            ),
+        )?;
+        (server_config, client_config)
+    };
 
     let server = spawn(
         &frp_dir.join("frps"),
@@ -586,6 +607,19 @@ async fn start_frp(
         echo: SocketAddr::from(([127, 0, 0, 1], echo)),
         sink: SocketAddr::from(([127, 0, 0, 1], sink)),
     })
+}
+
+/// frp reads TOML since v0.52. Older versions only understand INI
+fn frp_has_toml(frp_dir: &Path) -> Result<bool> {
+    let output = std::process::Command::new(frp_dir.join("frps"))
+        .arg("--version")
+        .output()
+        .with_context(|| format!("failed to run frps in {}", frp_dir.display()))?;
+    let version = String::from_utf8_lossy(&output.stdout);
+    let mut parts = version.trim().trim_start_matches('v').split('.');
+    let major: u32 = parts.next().unwrap_or_default().parse()?;
+    let minor: u32 = parts.next().unwrap_or_default().parse()?;
+    Ok((major, minor) >= (0, 52))
 }
 
 impl Tunnel {

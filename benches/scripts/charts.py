@@ -15,7 +15,7 @@ from html import escape
 
 TRANSPORTS = ["tcp", "noise", "tls"]
 RATHOLE_COLORS = ["#9ecae1", "#4292c6", "#08519c", "#08306b"]
-FRP_COLOR = "#e6550d"
+FRP_COLORS = ["#fdae6b", "#e6550d"]
 
 WIDTH, HEIGHT = 640, 320
 LEFT, RIGHT, TOP, BOTTOM = 64, 16, 64, 40
@@ -70,15 +70,13 @@ def nice_max(value):
 
 
 def colors(versions):
-    rathole = [v for v in versions if not v.startswith("frp")]
-    palette = RATHOLE_COLORS[-len(rathole):] if len(rathole) <= len(RATHOLE_COLORS) else RATHOLE_COLORS
-    result, i = {}, 0
-    for v in versions:
-        if v.startswith("frp"):
-            result[v] = FRP_COLOR
-        else:
-            result[v] = palette[min(i, len(palette) - 1)]
-            i += 1
+    """Blues for rathole and oranges for frp, darker for later versions"""
+    result = {}
+    for prefix, palette in ((False, RATHOLE_COLORS), (True, FRP_COLORS)):
+        group = [v for v in versions if v.startswith("frp") == prefix]
+        shades = palette[-len(group):] if len(group) <= len(palette) else palette
+        for i, v in enumerate(group):
+            result[v] = shades[min(i, len(shades) - 1)]
     return result
 
 
