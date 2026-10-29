@@ -1,7 +1,7 @@
 use crate::backoff::ExponentialBackoff;
 use crate::config::{Config, ServerConfig, ServerServiceConfig, ServiceType, TransportType};
 use crate::config_watcher::{ConfigChange, ServerServiceChange};
-use crate::constants::{listen_backoff, UDP_BUFFER_SIZE};
+use crate::constants::{listen_backoff, COPY_BUFFER_SIZE, UDP_BUFFER_SIZE};
 use crate::helper::{retry_notify_with_deadline, write_and_flush};
 use crate::multi_map::MultiMap;
 use crate::protocol::Hello::{ControlChannelHello, DataChannelHello};
@@ -16,7 +16,7 @@ use subtle::ConstantTimeEq;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{self, copy_bidirectional, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{self, copy_bidirectional_with_sizes, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{broadcast, mpsc, OwnedSemaphorePermit, RwLock, Semaphore};
 use tokio::time;
@@ -660,7 +660,13 @@ async fn run_tcp_connection_pool<T: Transport>(
             if let Some(mut ch) = data_ch_rx.recv().await {
                 if write_and_flush(&mut ch, &cmd).await.is_ok() {
                     tokio::spawn(async move {
-                        let _ = copy_bidirectional(&mut ch, &mut visitor).await;
+                        let _ = copy_bidirectional_with_sizes(
+                            &mut ch,
+                            &mut visitor,
+                            COPY_BUFFER_SIZE,
+                            COPY_BUFFER_SIZE,
+                        )
+                        .await;
                     });
                     break;
                 } else {
