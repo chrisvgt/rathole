@@ -201,7 +201,7 @@ If the bandwidth is more important, TCP_NODELAY can be opted out with `nodelay =
 
 Last three releases compared with the latest [frp](https://github.com/fatedier/frp), measured on the loopback interface. Every value is the median of 3 runs.
 
-Test machine: KVM virtual machine with 4 vCPUs (Intel host at 2.5 GHz, AES-NI, no AVX2), 7.7 GiB RAM, Arch Linux with kernel 7.2.9, Rust 1.99.1, 2026-10-29.
+Test machine: VM with 4 vCPUs (Intel, 2.5 GHz) and 8 GB RAM, Linux, Rust 1.99.1.
 
 | Version | Transport | Throughput | Latency p50 | Latency p99 | Connections/s | Peak memory server / client |
 |---|---|---|---|---|---|---|

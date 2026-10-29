@@ -5,14 +5,11 @@ Results of the tunnel benchmark (`benches/tunnel.rs`) for every release since v0
 ## Setup
 
 - Date: 2026-10-29
-- Machine: KVM virtual machine, 4 vCPUs (QEMU Virtual CPU version 2.5+, Intel host at 2.5 GHz, 16 MiB L3 cache), AES-NI yes, AVX2 no, 7.7 GiB RAM
-- OS: Arch Linux, kernel 7.2.9
+- Machine: VM with 4 vCPUs (Intel, 2.5 GHz) and 8 GB RAM, Linux
 - rathole: every version built from its tag with Rust 1.99.1, release profile and default features. v0.5.0 and v0.5.2 needed `cargo update -p time` to build with current Rust.
 - frp: v0.71.1, the official linux_amd64 release
 - Command: `benches/scripts/compare.sh v0.5.0 v0.5.1 v0.5.2 v0.6.0 v0.6.1 v0.6.2 v0.6.3 -- --rounds 3`. Every value is the median of 3 runs.
 - Load: before each run the benchmark waits until other processes use less than 10 % of the CPUs, and repeats a run if they used more during it. In this run other processes used at most 3.1 %, so no run had to be repeated.
-
-The VM's CPU model has no AVX2, which slows down the encryption of `noise` and `tls`. On current hardware these transports are faster.
 
 ## What is measured
 
