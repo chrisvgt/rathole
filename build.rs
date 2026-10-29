@@ -21,20 +21,12 @@ fn main() -> Result<()> {
         .describe(true, dirty, None)
         .build();
 
-    // Building outside a git checkout (e.g. from a source archive) is fine,
-    // the git entries are then left out.
-    if let Err(e) = Emitter::default()
+    // Outside a git checkout (e.g. a source archive) vergen leaves the git
+    // entries out with a warning, and `--version` falls back to the crate version.
+    Emitter::default()
         .add_instructions(&build)?
         .add_instructions(&cargo)?
         .add_instructions(&git)?
-        .fail_on_error()
-        .emit()
-    {
-        eprintln!("error occurred while generating instructions: {:?}", e);
-        Emitter::default()
-            .add_instructions(&build)?
-            .add_instructions(&cargo)?
-            .emit()?;
-    }
+        .emit()?;
     Ok(())
 }
