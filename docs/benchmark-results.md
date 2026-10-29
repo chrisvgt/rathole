@@ -30,7 +30,7 @@ For frp, `tcp` means `transport.tls.enable = false` and `tls` is frp's default. 
 
 ## Results
 
-| Version | Transport | Throughput | Latency p50 | Latency p99 | Connections/s | Peak memory server / client |
+| Version | Transport | Throughput ↑ | Latency p50 ↓ | Latency p99 ↓ | Connections/s ↑ | Peak memory server / client ↓ |
 |---|---|---|---|---|---|---|
 | v0.6.3 | tcp | 12.45 Gbit/s | 67 µs | 92 µs | 11469 | 11.2 / 11.3 MiB |
 | v0.6.3 | noise | 3.04 Gbit/s | 72 µs | 101 µs | 5300 | 43.0 / 34.8 MiB |
@@ -55,6 +55,8 @@ For frp, `tcp` means `transport.tls.enable = false` and `tls` is frp's default. 
 | v0.5.0 | tls | 4.37 Gbit/s | 81 µs | 119 µs | 838 | 21.7 / 26.4 MiB |
 | frp v0.71.1 | tcp | 12.32 Gbit/s | 107 µs | 139 µs | 6356 | 53.6 / 53.1 MiB |
 | frp v0.71.1 | tls | 4.18 Gbit/s | 110 µs | 158 µs | 5632 | 53.7 / 71.4 MiB |
+
+↑ higher is better, ↓ lower is better.
 
 ## Notes
 

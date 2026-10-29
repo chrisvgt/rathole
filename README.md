@@ -203,7 +203,7 @@ Last three releases compared with the latest [frp](https://github.com/fatedier/f
 
 Test machine: VM with 4 vCPUs (Intel, 2.5 GHz) and 8 GB RAM, Linux, Rust 1.99.1.
 
-| Version | Transport | Throughput | Latency p50 | Latency p99 | Connections/s | Peak memory server / client |
+| Version | Transport | Throughput ↑ | Latency p50 ↓ | Latency p99 ↓ | Connections/s ↑ | Peak memory server / client ↓ |
 |---|---|---|---|---|---|---|
 | v0.6.3 | tcp | 12.45 Gbit/s | 67 µs | 92 µs | 11469 | 11.2 / 11.3 MiB |
 | v0.6.3 | noise | 3.04 Gbit/s | 72 µs | 101 µs | 5300 | 43.0 / 34.8 MiB |
@@ -216,6 +216,8 @@ Test machine: VM with 4 vCPUs (Intel, 2.5 GHz) and 8 GB RAM, Linux, Rust 1.99.1.
 | v0.6.1 | tls | 4.31 Gbit/s | 83 µs | 119 µs | 824 | 20.8 / 25.4 MiB |
 | frp v0.71.1 | tcp | 12.32 Gbit/s | 107 µs | 139 µs | 6356 | 53.6 / 53.1 MiB |
 | frp v0.71.1 | tls | 4.18 Gbit/s | 110 µs | 158 µs | 5632 | 53.7 / 71.4 MiB |
+
+↑ higher is better, ↓ lower is better.
 
 rathole has lower latency than frp and uses less memory, the throughput is about the same. frp multiplexes all forwarded connections over one connection, so with TLS it opens new connections faster. Throughput and connection rate vary by up to 20 % between runs.
 

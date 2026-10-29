@@ -154,7 +154,7 @@ async fn main() -> Result<()> {
 
     let mut max_load = 0.0_f64;
     let mut table = String::new();
-    writeln!(table, "| Version | Transport | Throughput | Latency p50 | Latency p99 | Connections/s | Peak memory server / client |")?;
+    writeln!(table, "| Version | Transport | Throughput ↑ | Latency p50 ↓ | Latency p99 ↓ | Connections/s ↑ | Peak memory server / client ↓ |")?;
     writeln!(table, "|---|---|---|---|---|---|---|")?;
     for (label, target) in &targets {
         for &transport in &args.transport {
@@ -228,8 +228,9 @@ async fn main() -> Result<()> {
     );
     println!();
     print!("{}", table);
+    println!();
+    println!("↑ higher is better, ↓ lower is better.");
     if table.contains(" * |") {
-        println!();
         println!(
             "\\* Other processes used more than {} % CPU in every attempt.",
             args.max_load
