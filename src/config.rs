@@ -1,8 +1,10 @@
 use anyhow::{anyhow, bail, Context, Result};
-use serde::{Deserialize, Serialize};
+use serde::de::{DeserializeOwned, Error as _};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
-use std::ops::Deref;
+use std::net::SocketAddr;
+use std::ops::{Deref, RangeInclusive};
 use std::path::Path;
 use tokio::fs;
 use url::Url;
@@ -90,6 +92,140 @@ pub enum ServiceType {
 
 fn default_service_type() -> ServiceType {
     Default::default()
+}
+
+/// Most ports one service may cover. Every port becomes a service of its own
+/// with its own control channel
+const MAX_PORT_RANGE: usize = 100;
+
+/// Splits `host:first-last` into the host and the ports. Addresses without a
+/// range give `None`
+fn port_range(addr: &str) -> Result<Option<(&str, RangeInclusive<u16>)>> {
+    let Some((host, ports)) = addr.rsplit_once(':') else {
+        return Ok(None);
+    };
+    let Some((first, last)) = ports.split_once('-') else {
+        return Ok(None);
+    };
+    let parse = |port: &str| {
+        port.parse::<u16>()
+            .with_context(|| format!("Invalid port range in `{}`", addr))
+    };
+    let (first, last) = (parse(first)?, parse(last)?);
+    if first > last {
+        bail!("The port range in `{}` ends before it starts", addr);
+    }
+    if usize::from(last - first) >= MAX_PORT_RANGE {
+        bail!(
+            "The port range in `{}` has more than {} ports",
+            addr,
+            MAX_PORT_RANGE
+        );
+    }
+    Ok(Some((host, first..=last)))
+}
+
+/// Splits a service with a port range or `type = "tcp+udp"` into one service
+/// per port and protocol, e.g. `game` into `game#0/tcp`, `game#0/udp`,
+/// `game#1/tcp` and so on. Server and client name the parts the same way, so
+/// the protocol does not change.
+fn expand_service(
+    name: &str,
+    table: toml::Table,
+    addr_key: &str,
+) -> Result<Vec<(String, toml::Table)>> {
+    let types = match table.get("type").and_then(|v| v.as_str()) {
+        Some("tcp+udp") => vec![Some("tcp"), Some("udp")],
+        _ => vec![None],
+    };
+    let addrs = match table.get(addr_key).and_then(|v| v.as_str()) {
+        Some(addr) => match port_range(addr)? {
+            Some((host, ports)) => ports
+                .enumerate()
+                .map(|(i, port)| {
+                    (
+                        format!("{}#{}", name, i),
+                        Some(format!("{}:{}", host, port)),
+                    )
+                })
+                .collect(),
+            None => vec![(name.to_string(), None)],
+        },
+        None => vec![(name.to_string(), None)],
+    };
+
+    let mut services = Vec::new();
+    for (part, addr) in addrs {
+        for service_type in &types {
+            let mut table = table.clone();
+            let mut name = part.clone();
+            if let Some(addr) = &addr {
+                table.insert(addr_key.to_string(), addr.as_str().into());
+            }
+            if let Some(service_type) = service_type {
+                table.insert("type".to_string(), (*service_type).into());
+                name = format!("{}/{}", name, service_type);
+            }
+            services.push((name, table));
+        }
+    }
+    Ok(services)
+}
+
+fn expand_services<'de, D, T>(
+    deserializer: D,
+    addr_key: &str,
+) -> std::result::Result<HashMap<String, T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    let mut services = HashMap::new();
+    for (name, table) in HashMap::<String, toml::Table>::deserialize(deserializer)? {
+        let parts = expand_service(&name, table, addr_key)
+            .map_err(|e| D::Error::custom(format!("service `{}`: {:#}", name, e)))?;
+        for (part, table) in parts {
+            let service = toml::Value::Table(table)
+                .try_into()
+                .map_err(|e| D::Error::custom(format!("service `{}`: {}", name, e)))?;
+            if services.insert(part.clone(), service).is_some() {
+                return Err(D::Error::custom(format!(
+                    "service `{}` is defined twice",
+                    part
+                )));
+            }
+        }
+    }
+    Ok(services)
+}
+
+fn server_services<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<HashMap<String, ServerServiceConfig>, D::Error> {
+    expand_services(deserializer, "bind_addr")
+}
+
+fn client_services<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<HashMap<String, ClientServiceConfig>, D::Error> {
+    expand_services(deserializer, "local_addr")
+}
+
+/// Whether two services would bind the same port
+fn same_port(a: &ServerServiceConfig, b: &ServerServiceConfig) -> bool {
+    if a.service_type != b.service_type {
+        return false;
+    }
+    match (
+        a.bind_addr.parse::<SocketAddr>(),
+        b.bind_addr.parse::<SocketAddr>(),
+    ) {
+        (Ok(x), Ok(y)) => {
+            x.port() == y.port()
+                && (x.ip() == y.ip() || x.ip().is_unspecified() || y.ip().is_unspecified())
+        }
+        _ => a.bind_addr == b.bind_addr,
+    }
 }
 
 /// Per service config
@@ -204,6 +340,7 @@ pub struct ClientConfig {
     pub remote_addr: String,
     pub default_token: Option<MaskedString>,
     pub prefer_ipv6: Option<bool>,
+    #[serde(deserialize_with = "client_services")]
     pub services: HashMap<String, ClientServiceConfig>,
     #[serde(default)]
     pub transport: TransportConfig,
@@ -222,6 +359,7 @@ fn default_heartbeat_interval() -> u64 {
 pub struct ServerConfig {
     pub bind_addr: String,
     pub default_token: Option<MaskedString>,
+    #[serde(deserialize_with = "server_services")]
     pub services: HashMap<String, ServerServiceConfig>,
     #[serde(default)]
     pub transport: TransportConfig,
@@ -264,6 +402,24 @@ impl Config {
                 if s.token.is_none() {
                     bail!("The token of service {} is not set", name);
                 }
+            }
+        }
+
+        let mut services: Vec<_> = server.services.values().collect();
+        services.sort_by(|a, b| a.name.cmp(&b.name));
+        for (i, a) in services.iter().enumerate() {
+            if let Some(b) = services[i + 1..].iter().find(|b| same_port(a, b)) {
+                let protocol = match a.service_type {
+                    ServiceType::Tcp => "tcp",
+                    ServiceType::Udp => "udp",
+                };
+                bail!(
+                    "Services {} and {} both bind {} {}",
+                    a.name,
+                    b.name,
+                    protocol,
+                    a.bind_addr
+                );
             }
         }
 
@@ -530,6 +686,116 @@ mod tests {
             "4"
         );
         Ok(())
+    }
+
+    #[test]
+    fn test_port_ranges() -> Result<()> {
+        let cfg = Config::from_str(
+            r#"
+            [server]
+            bind_addr = "0.0.0.0:2333"
+            default_token = "t"
+            [server.services.game]
+            type = "tcp+udp"
+            bind_addr = "0.0.0.0:27015-27016"
+            [server.services.voice]
+            type = "udp"
+            bind_addr = "[::]:9987"
+            [server.services.web]
+            bind_addr = "127.0.0.1:8080"
+
+            [client]
+            remote_addr = "example.com:2333"
+            default_token = "t"
+            [client.services.game]
+            type = "tcp+udp"
+            local_addr = "192.168.1.10:37015-37016"
+            nodelay = false
+            "#,
+        )?;
+
+        let server = cfg.server.unwrap();
+        let mut names: Vec<_> = server.services.keys().cloned().collect();
+        names.sort();
+        assert_eq!(
+            names,
+            [
+                "game#0/tcp",
+                "game#0/udp",
+                "game#1/tcp",
+                "game#1/udp",
+                "voice",
+                "web"
+            ]
+        );
+        let s = &server.services["game#1/udp"];
+        assert_eq!(s.service_type, ServiceType::Udp);
+        assert_eq!(s.bind_addr, "0.0.0.0:27016");
+        assert_eq!(s.name, "game#1/udp");
+        assert_eq!(server.services["voice"].bind_addr, "[::]:9987");
+
+        // The client names the parts the same way and keeps the other options
+        let client = cfg.client.unwrap();
+        let c = &client.services["game#1/tcp"];
+        assert_eq!(c.service_type, ServiceType::Tcp);
+        assert_eq!(c.local_addr, "192.168.1.10:37016");
+        assert_eq!(c.nodelay, Some(false));
+        assert_eq!(client.services.len(), 4);
+        Ok(())
+    }
+
+    #[test]
+    fn test_invalid_port_ranges() {
+        let server = |services: &str| {
+            Config::from_str(&format!(
+                "[server]\nbind_addr = \"0.0.0.0:2333\"\ndefault_token = \"t\"\n{}",
+                services
+            ))
+        };
+        let service = |name: &str, ty: &str, addr: &str| {
+            format!(
+                "[server.services.{}]\ntype = \"{}\"\nbind_addr = \"{}\"\n",
+                name, ty, addr
+            )
+        };
+
+        assert!(server(&service("a", "tcp", "0.0.0.0:1-100")).is_ok());
+        for addr in [
+            "0.0.0.0:1-101",
+            "0.0.0.0:20-10",
+            "0.0.0.0:1-x",
+            "0.0.0.0:1-70000",
+        ] {
+            assert!(server(&service("a", "tcp", addr)).is_err(), "{}", addr);
+        }
+        assert!(server(&service("a", "tcp+tcp", "0.0.0.0:1")).is_err());
+        assert!(server(&format!(
+            "{}{}",
+            service("a", "tcp", "0.0.0.0:1"),
+            "unknown = 1\n"
+        ))
+        .is_err());
+
+        // The same port twice for one protocol
+        let overlap = |b: &str| {
+            server(&format!(
+                "{}{}",
+                service("a", "tcp", "0.0.0.0:7000-7004"),
+                b
+            ))
+        };
+        assert!(overlap(&service("b", "udp", "0.0.0.0:7001")).is_ok());
+        assert!(overlap(&service("b", "tcp+udp", "0.0.0.0:7001")).is_err());
+        assert!(overlap(&service("b", "tcp", "127.0.0.1:7004")).is_err());
+        assert!(overlap(&service("b", "tcp", "127.0.0.1:7005")).is_ok());
+
+        // A name that clashes with a part of a range
+        assert!(server(&format!(
+            "{}{}",
+            service("a", "tcp", "0.0.0.0:1-2"),
+            service("\"a#0\"", "tcp", "0.0.0.0:3")
+        ))
+        .is_err());
     }
 
     #[test]

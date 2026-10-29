@@ -1,0 +1,14 @@
+# echo and pingpong of the other tests, forwarded as one port range
+[client]
+remote_addr = "127.0.0.1:2333"
+default_token = "default_token_if_not_specify"
+
+[client.services.range]
+local_addr = "127.0.0.1:8080-8081"
+
+[server]
+bind_addr = "0.0.0.0:2333"
+default_token = "default_token_if_not_specify"
+
+[server.services.range]
+bind_addr = "0.0.0.0:2334-2335"

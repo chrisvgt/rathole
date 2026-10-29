@@ -68,6 +68,8 @@ async fn tcp() -> Result<()> {
     #[cfg(feature = "noise")]
     test("tests/for_tcp/noise_transport.toml", Type::Tcp).await?;
 
+    test("tests/for_tcp/port_range.toml", Type::Tcp).await?;
+
     #[cfg(any(feature = "websocket-native-tls", feature = "websocket-rustls"))]
     test("tests/for_tcp/websocket_transport.toml", Type::Tcp).await?;
 
@@ -116,6 +118,42 @@ async fn udp() -> Result<()> {
     #[cfg(any(feature = "websocket-native-tls", feature = "websocket-rustls"))]
     test("tests/for_udp/websocket_tls_transport.toml", Type::Udp).await?;
 
+    Ok(())
+}
+
+// One port range with type = "tcp+udp" forwards both protocols. It has ports
+// of its own, the tcp and udp tests run at the same time
+#[tokio::test]
+async fn tcp_udp_range() -> Result<()> {
+    const CONFIG: &str = "tests/for_udp/tcp_udp_range.toml";
+    const ECHO_ADDR: &str = "127.0.0.1:8092";
+    const PINGPONG_ADDR: &str = "127.0.0.1:8093";
+    init();
+
+    tokio::spawn(async move {
+        if let Err(e) = common::tcp::echo_server(ECHO_ADDR).await {
+            panic!("Failed to run the echo server for testing: {:?}", e);
+        }
+    });
+    tokio::spawn(async move {
+        if let Err(e) = common::tcp::pingpong_server(PINGPONG_ADDR).await {
+            panic!("Failed to run the pingpong server for testing: {:?}", e);
+        }
+    });
+    tokio::spawn(async move {
+        if let Err(e) = common::udp::echo_server(ECHO_ADDR).await {
+            panic!("Failed to run the echo server for testing: {:?}", e);
+        }
+    });
+    tokio::spawn(async move {
+        if let Err(e) = common::udp::pingpong_server(PINGPONG_ADDR).await {
+            panic!("Failed to run the pingpong server for testing: {:?}", e);
+        }
+    });
+
+    for t in [Type::Tcp, Type::Udp] {
+        test_with(CONFIG, t, "127.0.0.1:2344", "127.0.0.1:2345").await?;
+    }
     Ok(())
 }
 
@@ -172,8 +210,23 @@ async fn idle_peers() -> Result<()> {
     Ok(())
 }
 
-#[instrument]
 async fn test(config_path: &'static str, t: Type) -> Result<()> {
+    test_with(
+        config_path,
+        t,
+        ECHO_SERVER_ADDR_EXPOSED,
+        PINGPONG_SERVER_ADDR_EXPOSED,
+    )
+    .await
+}
+
+#[instrument]
+async fn test_with(
+    config_path: &'static str,
+    t: Type,
+    echo_addr: &'static str,
+    pingpong_addr: &'static str,
+) -> Result<()> {
     if cfg!(not(all(feature = "client", feature = "server"))) {
         // Skip the test if the client or the server is not enabled
         return Ok(());
@@ -203,11 +256,9 @@ async fn test(config_path: &'static str, t: Type) -> Result<()> {
     time::sleep(Duration::from_millis(2500)).await; // Wait for the client to retry
 
     info!("echo");
-    echo_hitter(ECHO_SERVER_ADDR_EXPOSED, t).await.unwrap();
+    echo_hitter(echo_addr, t).await.unwrap();
     info!("pingpong");
-    pingpong_hitter(PINGPONG_SERVER_ADDR_EXPOSED, t)
-        .await
-        .unwrap();
+    pingpong_hitter(pingpong_addr, t).await.unwrap();
 
     // Simulate the client crash and restart
     info!("shutdown the client");
@@ -224,11 +275,9 @@ async fn test(config_path: &'static str, t: Type) -> Result<()> {
     time::sleep(Duration::from_secs(1)).await; // Wait for the client to start
 
     info!("echo");
-    echo_hitter(ECHO_SERVER_ADDR_EXPOSED, t).await.unwrap();
+    echo_hitter(echo_addr, t).await.unwrap();
     info!("pingpong");
-    pingpong_hitter(PINGPONG_SERVER_ADDR_EXPOSED, t)
-        .await
-        .unwrap();
+    pingpong_hitter(pingpong_addr, t).await.unwrap();
 
     // Simulate the server crash and restart
     info!("shutdown the server");
@@ -251,13 +300,11 @@ async fn test(config_path: &'static str, t: Type) -> Result<()> {
 
     for _ in 0..HITTER_NUM / 2 {
         v.push(tokio::spawn(async move {
-            echo_hitter(ECHO_SERVER_ADDR_EXPOSED, t).await.unwrap();
+            echo_hitter(echo_addr, t).await.unwrap();
         }));
 
         v.push(tokio::spawn(async move {
-            pingpong_hitter(PINGPONG_SERVER_ADDR_EXPOSED, t)
-                .await
-                .unwrap();
+            pingpong_hitter(pingpong_addr, t).await.unwrap();
         }));
     }
 
