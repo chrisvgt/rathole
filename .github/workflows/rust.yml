@@ -5,6 +5,8 @@ on:
     branches: ["*"]
   push:
     branches: ["main", "develop"]
+  # Started by the Benchmark workflow for its pull requests
+  workflow_dispatch:
 
 concurrency:
   # Documentation suggests ${{ github.head_ref }}, but that's only available on pull_request/pull_request_target triggers, so using ${{ github.ref }}.
