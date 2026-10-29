@@ -128,17 +128,23 @@ jobs:
         with:
           name: rathole-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/${{ matrix.exe }}
-      # The Apache License requires a copy of the license with every binary
+      # The Apache License requires a copy of the license with every binary,
+      # and the licenses of the crates compiled into it require theirs
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
       - name: Add license files
         shell: bash
-        run: cp LICENSE NOTICE target/${{ matrix.target }}/release/
+        run: |
+          cargo about generate about.hbs -o target/${{ matrix.target }}/release/THIRD-PARTY-LICENSES.txt
+          cp LICENSE NOTICE target/${{ matrix.target }}/release/
       - name: Zip Release
         uses: TheDoctor0/zip-release@0.7.6
         with:
           type: zip
           filename: rathole-${{ matrix.target }}.zip
           directory: target/${{ matrix.target }}/release/
-          path: ${{ matrix.exe }} LICENSE NOTICE
+          path: ${{ matrix.exe }} LICENSE NOTICE THIRD-PARTY-LICENSES.txt
       - name: Checksum
         shell: bash
         working-directory: target/${{ matrix.target }}/release

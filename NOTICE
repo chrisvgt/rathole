@@ -14,3 +14,6 @@ Files changed in this fork carry a notice at the top. The certificates in
 examples/tls were regenerated with the script in that directory. The full
 list of changes is in the git history:
 https://github.com/chrisvgt/rathole/compare/5a9dd6d939744859af322aeff7fd60f7483a68bc...main
+
+The licenses of the third-party crates compiled into rathole are listed in
+THIRD-PARTY-LICENSES.txt in the release zips.
