@@ -1,15 +1,15 @@
 # Benchmark results
 
-Results of the tunnel benchmark (`benches/tunnel.rs`) for every release since v0.5.0, compared with the latest [frp](https://github.com/fatedier/frp). The [README](../README.md#benchmark) shows the last three releases. The original benchmark from 2021 is in [benchmark.md](benchmark.md).
+Results of the tunnel benchmark (`benches/tunnel.rs`) for every release since v0.5.0, compared with [frp](https://github.com/fatedier/frp) v0.38.0 from the original benchmark and the latest frp. The [README](../README.md#benchmark) shows v0.5.0, the version this fork started from, and the last two releases. The original benchmark from 2021 is in [benchmark.md](benchmark.md).
 
 ## Setup
 
 - Date: 2026-10-29
 - Machine: VM with 4 vCPUs (Intel, 2.5 GHz) and 8 GB RAM, Linux
 - rathole: every version built from its tag with Rust 1.99.1, release profile and default features. v0.5.0 and v0.5.2 needed `cargo update -p time` to build with current Rust.
-- frp: v0.71.1, the official linux_amd64 release
-- Command: `benches/scripts/compare.sh v0.5.0 v0.5.1 v0.5.2 v0.6.0 v0.6.1 v0.6.2 v0.6.3 -- --rounds 3`. Every value is the median of 3 runs.
-- Load: before each run the benchmark waits until other processes use less than 10 % of the CPUs, and repeats a run if they used more during it. In this run other processes used at most 3.1 %, so no run had to be repeated.
+- frp: v0.38.0 and v0.71.1, the official linux_amd64 releases
+- Command: `FRP_VERSIONS="0.38.0 latest" benches/scripts/compare.sh v0.5.0 v0.5.1 v0.5.2 v0.6.0 v0.6.1 v0.6.2 v0.6.3 -- --rounds 3`. Every value is the median of 3 runs.
+- Load: before each run the benchmark waits until other processes use less than 10 % of the CPUs, and repeats a run if they used more during it. One run was repeated because the machine was busy. In the kept runs other processes used at most 6.1 %.
 
 ## What is measured
 
@@ -32,29 +32,31 @@ For frp, `tcp` means `transport.tls.enable = false` and `tls` is frp's default. 
 
 | Version | Transport | Throughput ↑ | Latency p50 ↓ | Latency p99 ↓ | Connections/s ↑ | Peak memory server / client ↓ |
 |---|---|---|---|---|---|---|
-| v0.6.3 | tcp | 12.45 Gbit/s | 67 µs | 92 µs | 11469 | 11.2 / 11.3 MiB |
-| v0.6.3 | noise | 3.04 Gbit/s | 72 µs | 101 µs | 5300 | 43.0 / 34.8 MiB |
-| v0.6.3 | tls | 4.19 Gbit/s | 83 µs | 122 µs | 1914 | 20.9 / 25.1 MiB |
-| v0.6.2 | tcp | 11.74 Gbit/s | 68 µs | 110 µs | 12656 | 11.2 / 11.2 MiB |
-| v0.6.2 | noise | 3.05 Gbit/s | 71 µs | 97 µs | 5354 | 43.4 / 35.5 MiB |
-| v0.6.2 | tls | 4.29 Gbit/s | 84 µs | 122 µs | 2051 | 21.0 / 25.2 MiB |
-| v0.6.1 | tcp | 12.08 Gbit/s | 67 µs | 91 µs | 12480 | 11.4 / 11.4 MiB |
-| v0.6.1 | noise | 3.01 Gbit/s | 73 µs | 112 µs | 3942 | 43.5 / 36.4 MiB |
-| v0.6.1 | tls | 4.31 Gbit/s | 83 µs | 119 µs | 824 | 20.8 / 25.4 MiB |
-| v0.6.0 | tcp | 12.36 Gbit/s | 70 µs | 107 µs | 13063 | 11.2 / 11.2 MiB |
-| v0.6.0 | noise | 2.84 Gbit/s | 84 µs | 133 µs | 3787 | 43.2 / 34.2 MiB |
-| v0.6.0 | tls | 4.22 Gbit/s | 90 µs | 143 µs | 751 | 20.7 / 25.3 MiB |
-| v0.5.2 | tcp | 11.47 Gbit/s | 69 µs | 104 µs | 11940 | 11.2 / 11.1 MiB |
-| v0.5.2 | noise | 2.89 Gbit/s | 74 µs | 117 µs | 3727 | 43.0 / 35.1 MiB |
-| v0.5.2 | tls | 4.23 Gbit/s | 87 µs | 144 µs | 772 | 20.7 / 25.3 MiB |
-| v0.5.1 | tcp | 11.14 Gbit/s | 67 µs | 92 µs | 12421 | 11.2 / 11.1 MiB |
-| v0.5.1 | noise | 3.05 Gbit/s | 70 µs | 90 µs | 4425 | 43.2 / 34.8 MiB |
-| v0.5.1 | tls | 4.27 Gbit/s | 87 µs | 135 µs | 725 | 20.7 / 25.2 MiB |
-| v0.5.0 | tcp | 12.60 Gbit/s | 67 µs | 99 µs | 12910 | 12.4 / 12.3 MiB |
-| v0.5.0 | noise | 3.00 Gbit/s | 72 µs | 103 µs | 4610 | 44.6 / 37.2 MiB |
-| v0.5.0 | tls | 4.37 Gbit/s | 81 µs | 119 µs | 838 | 21.7 / 26.4 MiB |
-| frp v0.71.1 | tcp | 12.32 Gbit/s | 107 µs | 139 µs | 6356 | 53.6 / 53.1 MiB |
-| frp v0.71.1 | tls | 4.18 Gbit/s | 110 µs | 158 µs | 5632 | 53.7 / 71.4 MiB |
+| v0.6.3 | tcp | 10.92 Gbit/s | 68 µs | 104 µs | 12265 | 11.0 / 11.0 MiB |
+| v0.6.3 | noise | 2.94 Gbit/s | 74 µs | 112 µs | 5198 | 42.9 / 34.9 MiB |
+| v0.6.3 | tls | 4.25 Gbit/s | 83 µs | 141 µs | 2053 | 20.8 / 24.9 MiB |
+| v0.6.2 | tcp | 13.30 Gbit/s | 67 µs | 105 µs | 12812 | 11.0 / 11.0 MiB |
+| v0.6.2 | noise | 3.03 Gbit/s | 71 µs | 91 µs | 5736 | 43.0 / 34.2 MiB |
+| v0.6.2 | tls | 4.13 Gbit/s | 84 µs | 142 µs | 2072 | 20.9 / 24.9 MiB |
+| v0.6.1 | tcp | 11.98 Gbit/s | 66 µs | 87 µs | 12446 | 11.0 / 11.0 MiB |
+| v0.6.1 | noise | 3.01 Gbit/s | 70 µs | 100 µs | 4575 | 42.8 / 34.3 MiB |
+| v0.6.1 | tls | 4.30 Gbit/s | 82 µs | 117 µs | 823 | 20.5 / 25.0 MiB |
+| v0.6.0 | tcp | 13.78 Gbit/s | 67 µs | 98 µs | 13307 | 10.9 / 10.9 MiB |
+| v0.6.0 | noise | 2.99 Gbit/s | 72 µs | 105 µs | 4443 | 42.7 / 34.4 MiB |
+| v0.6.0 | tls | 4.40 Gbit/s | 81 µs | 114 µs | 837 | 20.6 / 25.2 MiB |
+| v0.5.2 | tcp | 12.44 Gbit/s | 67 µs | 86 µs | 13488 | 10.8 / 10.9 MiB |
+| v0.5.2 | noise | 3.05 Gbit/s | 71 µs | 97 µs | 4274 | 42.8 / 35.4 MiB |
+| v0.5.2 | tls | 4.38 Gbit/s | 82 µs | 112 µs | 837 | 20.6 / 25.1 MiB |
+| v0.5.1 | tcp | 12.15 Gbit/s | 69 µs | 100 µs | 12207 | 10.9 / 10.9 MiB |
+| v0.5.1 | noise | 3.08 Gbit/s | 71 µs | 101 µs | 4278 | 42.7 / 34.1 MiB |
+| v0.5.1 | tls | 4.29 Gbit/s | 82 µs | 127 µs | 802 | 20.5 / 25.1 MiB |
+| v0.5.0 | tcp | 11.97 Gbit/s | 66 µs | 84 µs | 11982 | 11.9 / 12.0 MiB |
+| v0.5.0 | noise | 3.01 Gbit/s | 73 µs | 103 µs | 4507 | 43.7 / 36.3 MiB |
+| v0.5.0 | tls | 4.35 Gbit/s | 81 µs | 111 µs | 831 | 21.4 / 25.9 MiB |
+| frp v0.71.1 | tcp | 11.10 Gbit/s | 107 µs | 146 µs | 6120 | 51.3 / 45.2 MiB |
+| frp v0.71.1 | tls | 4.08 Gbit/s | 112 µs | 150 µs | 5507 | 50.0 / 66.4 MiB |
+| frp v0.38.0 | tcp | 6.61 Gbit/s | 103 µs | 137 µs | 6946 | 39.8 / 33.5 MiB |
+| frp v0.38.0 | tls | 2.96 Gbit/s | 119 µs | 175 µs | 6282 | 40.2 / 33.9 MiB |
 
 ↑ higher is better, ↓ lower is better.
 
@@ -63,18 +65,19 @@ For frp, `tcp` means `transport.tls.enable = false` and `tls` is frp's default. 
 - Throughput and connection rate change by up to 20 % between runs on this VM, so the smaller differences between versions there are noise. Latency and memory stay within a few percent.
 - The tls connection rate went up from about 800/s to about 2000/s in v0.6.2. Since then the server does the handshake outside its accept loop, so handshakes run in parallel.
 - rathole opens a new connection to the server for every forwarded connection. frp multiplexes all of them over one connection, so it does not pay for a new TLS handshake each time. That is why frp opens more connections per second with tls, but fewer without encryption.
-- Compared with frp, rathole has about a third lower latency and uses about a fifth of the memory without encryption. The throughput is about the same.
+- Since the fork (v0.5.0), the tls connection rate went up about 2.5 times. Throughput, latency and memory stayed the same.
+- Compared with frp, rathole has about a third lower latency and uses about a quarter of the memory without encryption. frp v0.38.0 reached about half the throughput of rathole, the latest frp is on par.
 
 ## Compared with 2021
 
-The [original benchmark](benchmark.md) from 2021 measured rathole and frp 0.38 with iperf3 on two Xeon E5-2620. The hardware and the tools differ, so only the ratio between rathole and frp can be compared, not the absolute numbers.
+The [original benchmark](benchmark.md) from 2021 measured rathole and frp 0.38 with iperf3 on two Xeon E5-2620. Hardware and tools differ, so the absolute numbers cannot be compared.
 
-| | 2021 rathole | 2021 frp 0.38 | 2026 rathole v0.6.3 | 2026 frp v0.71.1 |
-|---|---|---|---|---|
-| TCP throughput | 3.6 Gbit/s | 0.8 Gbit/s | 12.5 Gbit/s | 12.3 Gbit/s |
-| Memory server / client | about 8 / 7 MB | about 67 / 62 MB | 11 / 11 MiB | 54 / 53 MiB |
+| | 2021 rathole | 2021 frp 0.38 | 2026 rathole v0.5.0 | 2026 frp v0.38.0 | 2026 frp v0.71.1 |
+|---|---|---|---|---|---|
+| TCP throughput | 3.6 Gbit/s | 0.8 Gbit/s | 12.0 Gbit/s | 6.6 Gbit/s | 11.1 Gbit/s |
+| Memory server / client | about 8 / 7 MB | about 67 / 62 MB | 12 / 12 MiB | 40 / 34 MiB | 51 / 45 MiB |
 
-In 2021 rathole had about 4 times the throughput of frp. frp has caught up since then and both are now about the same. rathole still needs about a fifth of the memory.
+In 2021 rathole had about 4 times the throughput of frp 0.38. Here the gap is smaller, about 1.8 times, and the latest frp has caught up. rathole still needs a quarter to a third of frp's memory.
 
 ## Running it
 
@@ -90,11 +93,11 @@ cargo bench --bench tunnel -- --rathole v0.6.3=path/to/rathole --frp v0.71.1=pat
 # Options such as --transport, --duration, --rounds and --max-load
 cargo bench --bench tunnel -- --help
 
-# Build tags, download frp (latest or FRP_VERSION) and compare them
-benches/scripts/compare.sh v0.6.1 v0.6.2 v0.6.3 -- --rounds 3
+# Build tags, download frp (FRP_VERSIONS, default latest) and compare them
+FRP_VERSIONS="0.38.0 latest" benches/scripts/compare.sh v0.5.0 v0.6.2 v0.6.3 -- --rounds 3
 
 # Draw the README charts from a result table (Python 3, no other dependencies)
-benches/scripts/charts.py docs/benchmark-results.md docs/img v0.6.1 v0.6.2 v0.6.3 "frp v0.71.1"
+benches/scripts/charts.py docs/benchmark-results.md docs/img v0.5.0 v0.6.2 v0.6.3 "frp v0.38.0" "frp v0.71.1"
 ```
 
 `compare.sh` needs git, cargo, curl and the GitHub CLI (only to look up the latest frp version). It verifies the frp download against frp's published SHA256 checksums.

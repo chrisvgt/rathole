@@ -199,30 +199,32 @@ If the bandwidth is more important, TCP_NODELAY can be opted out with `nodelay =
 
 ## Benchmark
 
-Last three releases compared with the latest [frp](https://github.com/fatedier/frp), measured on the loopback interface. Every value is the median of 3 runs.
+v0.5.0, the version this fork started from, and the last two releases, compared with [frp](https://github.com/fatedier/frp) v0.38.0 from the original benchmark and the latest frp. Measured on the loopback interface, every value is the median of 3 runs.
 
 Test machine: VM with 4 vCPUs (Intel, 2.5 GHz) and 8 GB RAM, Linux, Rust 1.99.1.
 
 | Version | Transport | Throughput ↑ | Latency p50 ↓ | Latency p99 ↓ | Connections/s ↑ | Peak memory server / client ↓ |
 |---|---|---|---|---|---|---|
-| v0.6.3 | tcp | 12.45 Gbit/s | 67 µs | 92 µs | 11469 | 11.2 / 11.3 MiB |
-| v0.6.3 | noise | 3.04 Gbit/s | 72 µs | 101 µs | 5300 | 43.0 / 34.8 MiB |
-| v0.6.3 | tls | 4.19 Gbit/s | 83 µs | 122 µs | 1914 | 20.9 / 25.1 MiB |
-| v0.6.2 | tcp | 11.74 Gbit/s | 68 µs | 110 µs | 12656 | 11.2 / 11.2 MiB |
-| v0.6.2 | noise | 3.05 Gbit/s | 71 µs | 97 µs | 5354 | 43.4 / 35.5 MiB |
-| v0.6.2 | tls | 4.29 Gbit/s | 84 µs | 122 µs | 2051 | 21.0 / 25.2 MiB |
-| v0.6.1 | tcp | 12.08 Gbit/s | 67 µs | 91 µs | 12480 | 11.4 / 11.4 MiB |
-| v0.6.1 | noise | 3.01 Gbit/s | 73 µs | 112 µs | 3942 | 43.5 / 36.4 MiB |
-| v0.6.1 | tls | 4.31 Gbit/s | 83 µs | 119 µs | 824 | 20.8 / 25.4 MiB |
-| frp v0.71.1 | tcp | 12.32 Gbit/s | 107 µs | 139 µs | 6356 | 53.6 / 53.1 MiB |
-| frp v0.71.1 | tls | 4.18 Gbit/s | 110 µs | 158 µs | 5632 | 53.7 / 71.4 MiB |
+| v0.6.3 | tcp | 10.92 Gbit/s | 68 µs | 104 µs | 12265 | 11.0 / 11.0 MiB |
+| v0.6.3 | noise | 2.94 Gbit/s | 74 µs | 112 µs | 5198 | 42.9 / 34.9 MiB |
+| v0.6.3 | tls | 4.25 Gbit/s | 83 µs | 141 µs | 2053 | 20.8 / 24.9 MiB |
+| v0.6.2 | tcp | 13.30 Gbit/s | 67 µs | 105 µs | 12812 | 11.0 / 11.0 MiB |
+| v0.6.2 | noise | 3.03 Gbit/s | 71 µs | 91 µs | 5736 | 43.0 / 34.2 MiB |
+| v0.6.2 | tls | 4.13 Gbit/s | 84 µs | 142 µs | 2072 | 20.9 / 24.9 MiB |
+| v0.5.0 | tcp | 11.97 Gbit/s | 66 µs | 84 µs | 11982 | 11.9 / 12.0 MiB |
+| v0.5.0 | noise | 3.01 Gbit/s | 73 µs | 103 µs | 4507 | 43.7 / 36.3 MiB |
+| v0.5.0 | tls | 4.35 Gbit/s | 81 µs | 111 µs | 831 | 21.4 / 25.9 MiB |
+| frp v0.71.1 | tcp | 11.10 Gbit/s | 107 µs | 146 µs | 6120 | 51.3 / 45.2 MiB |
+| frp v0.71.1 | tls | 4.08 Gbit/s | 112 µs | 150 µs | 5507 | 50.0 / 66.4 MiB |
+| frp v0.38.0 | tcp | 6.61 Gbit/s | 103 µs | 137 µs | 6946 | 39.8 / 33.5 MiB |
+| frp v0.38.0 | tls | 2.96 Gbit/s | 119 µs | 175 µs | 6282 | 40.2 / 33.9 MiB |
 
 ↑ higher is better, ↓ lower is better.
 
 <img src="./docs/img/bench-throughput.svg" width="49%"> <img src="./docs/img/bench-latency.svg" width="49%">
 <img src="./docs/img/bench-connections.svg" width="49%"> <img src="./docs/img/bench-memory.svg" width="49%">
 
-rathole has lower latency than frp and uses less memory, the throughput is about the same. frp multiplexes all forwarded connections over one connection, so with TLS it opens new connections faster. Throughput and connection rate vary by up to 20 % between runs.
+Since the fork, rathole opens about 2.5 times as many TLS connections per second, the other values stayed the same. rathole has lower latency than frp and uses less memory. frp v0.38.0 reached about half the throughput of rathole, the latest frp is on par. frp multiplexes all forwarded connections over one connection, so with TLS it opens new connections faster. Throughput and connection rate vary by up to 20 % between runs.
 
 All versions back to v0.5.0, the setup and what each column means are in [Benchmark results](./docs/benchmark-results.md). The benchmark only runs on request:
 

@@ -2,13 +2,15 @@
 <rect width="640" height="320" fill="#ffffff"/>
 <text x="64" y="22" font-size="15" font-weight="bold" fill="#222">Latency p50 (lower is better)</text>
 <rect x="64" y="34" width="12" height="12" fill="#4292c6"/>
-<text x="80" y="44" fill="#222">v0.6.1</text>
+<text x="80" y="44" fill="#222">v0.5.0</text>
 <rect x="130" y="34" width="12" height="12" fill="#08519c"/>
 <text x="146" y="44" fill="#222">v0.6.2</text>
 <rect x="196" y="34" width="12" height="12" fill="#08306b"/>
 <text x="212" y="44" fill="#222">v0.6.3</text>
-<rect x="262" y="34" width="12" height="12" fill="#e6550d"/>
-<text x="278" y="44" fill="#222">frp v0.71.1</text>
+<rect x="262" y="34" width="12" height="12" fill="#fdae6b"/>
+<text x="278" y="44" fill="#222">frp v0.38.0</text>
+<rect x="363" y="34" width="12" height="12" fill="#e6550d"/>
+<text x="379" y="44" fill="#222">frp v0.71.1</text>
 <line x1="64" y1="280.0" x2="624" y2="280.0" stroke="#ddd"/>
 <text x="58" y="284.0" text-anchor="end" fill="#555">0 µs</text>
 <line x1="64" y1="226.0" x2="624" y2="226.0" stroke="#ddd"/>
@@ -19,29 +21,33 @@
 <text x="58" y="122.0" text-anchor="end" fill="#555">150 µs</text>
 <line x1="64" y1="64.0" x2="624" y2="64.0" stroke="#ddd"/>
 <text x="58" y="68.0" text-anchor="end" fill="#555">200 µs</text>
-<rect x="86.3" y="207.6" width="34.0" height="72.4" fill="#4292c6"/>
-<text x="103.3" y="203.6" text-anchor="middle" font-size="10" fill="#333">67</text>
-<rect x="122.3" y="206.6" width="34.0" height="73.4" fill="#08519c"/>
-<text x="139.3" y="202.6" text-anchor="middle" font-size="10" fill="#333">68</text>
-<rect x="158.3" y="207.6" width="34.0" height="72.4" fill="#08306b"/>
-<text x="175.3" y="203.6" text-anchor="middle" font-size="10" fill="#333">67</text>
-<rect x="194.3" y="164.4" width="34.0" height="115.6" fill="#e6550d"/>
-<text x="211.3" y="160.4" text-anchor="middle" font-size="10" fill="#333">107</text>
+<rect x="83.7" y="208.7" width="27.9" height="71.3" fill="#4292c6"/>
+<text x="97.6" y="204.7" text-anchor="middle" font-size="10" fill="#333">66</text>
+<rect x="113.5" y="207.6" width="27.9" height="72.4" fill="#08519c"/>
+<text x="127.5" y="203.6" text-anchor="middle" font-size="10" fill="#333">67</text>
+<rect x="143.4" y="206.6" width="27.9" height="73.4" fill="#08306b"/>
+<text x="157.3" y="202.6" text-anchor="middle" font-size="10" fill="#333">68</text>
+<rect x="173.3" y="168.8" width="27.9" height="111.2" fill="#fdae6b"/>
+<text x="187.2" y="164.8" text-anchor="middle" font-size="10" fill="#333">103</text>
+<rect x="203.1" y="164.4" width="27.9" height="115.6" fill="#e6550d"/>
+<text x="217.1" y="160.4" text-anchor="middle" font-size="10" fill="#333">107</text>
 <text x="157.3" y="298" text-anchor="middle" fill="#222">tcp</text>
-<rect x="291.0" y="201.2" width="34.0" height="78.8" fill="#4292c6"/>
-<text x="308.0" y="197.2" text-anchor="middle" font-size="10" fill="#333">73</text>
-<rect x="327.0" y="203.3" width="34.0" height="76.7" fill="#08519c"/>
+<rect x="300.2" y="201.2" width="27.9" height="78.8" fill="#4292c6"/>
+<text x="314.1" y="197.2" text-anchor="middle" font-size="10" fill="#333">73</text>
+<rect x="330.1" y="203.3" width="27.9" height="76.7" fill="#08519c"/>
 <text x="344.0" y="199.3" text-anchor="middle" font-size="10" fill="#333">71</text>
-<rect x="363.0" y="202.2" width="34.0" height="77.8" fill="#08306b"/>
-<text x="380.0" y="198.2" text-anchor="middle" font-size="10" fill="#333">72</text>
+<rect x="359.9" y="200.1" width="27.9" height="79.9" fill="#08306b"/>
+<text x="373.9" y="196.1" text-anchor="middle" font-size="10" fill="#333">74</text>
 <text x="344.0" y="298" text-anchor="middle" fill="#222">noise</text>
-<rect x="459.7" y="190.4" width="34.0" height="89.6" fill="#4292c6"/>
-<text x="476.7" y="186.4" text-anchor="middle" font-size="10" fill="#333">83</text>
-<rect x="495.7" y="189.3" width="34.0" height="90.7" fill="#08519c"/>
-<text x="512.7" y="185.3" text-anchor="middle" font-size="10" fill="#333">84</text>
-<rect x="531.7" y="190.4" width="34.0" height="89.6" fill="#08306b"/>
-<text x="548.7" y="186.4" text-anchor="middle" font-size="10" fill="#333">83</text>
-<rect x="567.7" y="161.2" width="34.0" height="118.8" fill="#e6550d"/>
-<text x="584.7" y="157.2" text-anchor="middle" font-size="10" fill="#333">110</text>
+<rect x="457.0" y="192.5" width="27.9" height="87.5" fill="#4292c6"/>
+<text x="470.9" y="188.5" text-anchor="middle" font-size="10" fill="#333">81</text>
+<rect x="486.9" y="189.3" width="27.9" height="90.7" fill="#08519c"/>
+<text x="500.8" y="185.3" text-anchor="middle" font-size="10" fill="#333">84</text>
+<rect x="516.7" y="190.4" width="27.9" height="89.6" fill="#08306b"/>
+<text x="530.7" y="186.4" text-anchor="middle" font-size="10" fill="#333">83</text>
+<rect x="546.6" y="151.5" width="27.9" height="128.5" fill="#fdae6b"/>
+<text x="560.5" y="147.5" text-anchor="middle" font-size="10" fill="#333">119</text>
+<rect x="576.5" y="159.0" width="27.9" height="121.0" fill="#e6550d"/>
+<text x="590.4" y="155.0" text-anchor="middle" font-size="10" fill="#333">112</text>
 <text x="530.7" y="298" text-anchor="middle" fill="#222">tls</text>
 </svg>
