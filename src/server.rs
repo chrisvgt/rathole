@@ -18,7 +18,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{self, copy_bidirectional, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
-use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::sync::{broadcast, mpsc, OwnedSemaphorePermit, RwLock, Semaphore};
 use tokio::time;
 use tracing::{debug, error, info, info_span, instrument, warn, Instrument, Span};
 
@@ -35,7 +35,8 @@ type Nonce = protocol::Digest; // Also called `session_key`
 const TCP_POOL_SIZE: usize = 8; // The number of cached connections for TCP servies
 const UDP_POOL_SIZE: usize = 2; // The number of cached connections for UDP services
 const CHAN_SIZE: usize = 2048; // The capacity of various chans
-const HANDSHAKE_TIMEOUT: u64 = 5; // Timeout for transport handshake
+const HANDSHAKE_TIMEOUT: u64 = 5; // Timeout for transport handshake and each handshake message
+const MAX_PENDING_HANDSHAKES: usize = 1024; // Connections that have not finished the handshake
 
 // The entrypoint of running a server
 pub async fn run_server(
@@ -151,6 +152,8 @@ impl<T: 'static + Transport> Server<T> {
             ..Default::default()
         };
 
+        let pending = Arc::new(Semaphore::new(MAX_PENDING_HANDSHAKES));
+
         // Wait for connections and shutdown signals
         loop {
             tokio::select! {
@@ -178,28 +181,25 @@ impl<T: 'static + Transport> Server<T> {
                         Ok((conn, addr)) => {
                             backoff.reset();
 
-                            // Do transport handshake with a timeout
-                            match time::timeout(Duration::from_secs(HANDSHAKE_TIMEOUT), self.transport.handshake(conn)).await {
-                                Ok(conn) => {
-                                    match conn.with_context(|| "Failed to do transport handshake") {
-                                        Ok(conn) => {
-                                            let services = self.services.clone();
-                                            let control_channels = self.control_channels.clone();
-                                            let server_config = self.config.clone();
-                                            tokio::spawn(async move {
-                                                if let Err(err) = handle_connection(conn, services, control_channels, server_config).await {
-                                                    error!("{:#}", err);
-                                                }
-                                            }.instrument(info_span!("connection", %addr)));
-                                        }, Err(e) => {
-                                            error!("{:#}", e);
-                                        }
-                                    }
-                                },
-                                Err(e) => {
-                                    error!("Transport handshake timeout: {}", e);
+                            // Bound the number of connections that have not finished the handshake yet
+                            let permit = match pending.clone().try_acquire_owned() {
+                                Ok(v) => v,
+                                Err(_) => {
+                                    warn!("Too many pending handshakes. Dropping the connection from {}", addr);
+                                    continue;
                                 }
-                            }
+                            };
+
+                            // Handshake in its own task, so a slow peer cannot block the accept loop
+                            let transport = self.transport.clone();
+                            let services = self.services.clone();
+                            let control_channels = self.control_channels.clone();
+                            let server_config = self.config.clone();
+                            tokio::spawn(async move {
+                                if let Err(err) = handle_connection(transport, conn, services, control_channels, server_config, permit).await {
+                                    error!("{:#}", err);
+                                }
+                            }.instrument(info_span!("connection", %addr)));
                         }
                     }
                 },
@@ -247,13 +247,29 @@ impl<T: 'static + Transport> Server<T> {
 
 // Handle connections to `server.bind_addr`
 async fn handle_connection<T: 'static + Transport>(
-    mut conn: T::Stream,
+    transport: Arc<T>,
+    conn: T::RawStream,
     services: Arc<RwLock<HashMap<ServiceDigest, ServerServiceConfig>>>,
     control_channels: Arc<RwLock<ControlChannelMap<T>>>,
     server_config: Arc<ServerConfig>,
+    _permit: OwnedSemaphorePermit,
 ) -> Result<()> {
+    // Do transport handshake with a timeout
+    let mut conn = time::timeout(
+        Duration::from_secs(HANDSHAKE_TIMEOUT),
+        transport.handshake(conn),
+    )
+    .await
+    .with_context(|| "Transport handshake timeout")?
+    .with_context(|| "Failed to do transport handshake")?;
+
     // Read hello
-    let hello = read_hello(&mut conn).await?;
+    let hello = time::timeout(
+        Duration::from_secs(HANDSHAKE_TIMEOUT),
+        read_hello(&mut conn),
+    )
+    .await
+    .with_context(|| "Timeout reading hello")??;
     match hello {
         ControlChannelHello(_, service_digest) => {
             do_control_channel_handshake(
@@ -322,7 +338,10 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
     concat.append(&mut nonce);
 
     // Read auth
-    let protocol::Auth(d) = read_auth(&mut conn).await?;
+    let protocol::Auth(d) =
+        time::timeout(Duration::from_secs(HANDSHAKE_TIMEOUT), read_auth(&mut conn))
+            .await
+            .with_context(|| "Timeout reading auth")??;
 
     // Validate
     let session_key = protocol::digest(&concat);
