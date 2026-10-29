@@ -168,12 +168,9 @@ jobs:
             target/${{ matrix.target }}/release/rathole-${{ matrix.target }}.zip.sha256
           generate_release_notes: true
           body: |
-            Security fixes, no protocol change (compatible with 0.6.0 and later).
+            **Security:** the server no longer reveals which services exist, and a slow peer can no longer block other handshakes or config reloads. No protocol change, compatible with 0.6.0 and later.
 
-            - The server answers an unknown service like a wrong token, so service names can no longer be probed without a token. A client with a misspelled service name now reports "Incorrect token"; the server log names the real cause.
-            - A slow peer can no longer block other handshakes or config reloads on the server.
-            - The client keeps at most 4096 visitors per UDP service, so spoofed UDP traffic can no longer exhaust its file descriptors.
-            - The zips now include `LICENSE`, `NOTICE` and the licenses of all bundled crates (`THIRD-PARTY-LICENSES.txt`).
+            Also: the client keeps at most 4096 visitors per UDP service, so spoofed UDP traffic can no longer exhaust its file descriptors, and the zips now include `LICENSE`, `NOTICE` and the licenses of all bundled crates.
           draft: true
   # docker:
   #   name: Publish to Docker Hub
