@@ -13,7 +13,7 @@ use bytes::{Bytes, BytesMut};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::io::{self, copy_bidirectional, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{self, copy_bidirectional_with_sizes, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::{broadcast, mpsc, oneshot, RwLock};
 use tokio::time::{self, Duration, Instant};
@@ -27,7 +27,8 @@ use crate::transport::TlsTransport;
 use crate::transport::WebsocketTransport;
 
 use crate::constants::{
-    run_control_chan_backoff, UDP_BUFFER_SIZE, UDP_MAX_FORWARDERS, UDP_SENDQ_SIZE, UDP_TIMEOUT,
+    run_control_chan_backoff, COPY_BUFFER_SIZE, UDP_BUFFER_SIZE, UDP_MAX_FORWARDERS,
+    UDP_SENDQ_SIZE, UDP_TIMEOUT,
 };
 
 // The entrypoint of running a client
@@ -246,7 +247,9 @@ async fn run_data_channel_for_tcp<T: Transport>(
     let mut local = TcpStream::connect(local_addr)
         .await
         .with_context(|| format!("Failed to connect to {}", local_addr))?;
-    let _ = copy_bidirectional(&mut conn, &mut local).await;
+    let _ =
+        copy_bidirectional_with_sizes(&mut conn, &mut local, COPY_BUFFER_SIZE, COPY_BUFFER_SIZE)
+            .await;
     Ok(())
 }
 
