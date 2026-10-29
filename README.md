@@ -30,7 +30,7 @@ rathole, like [frp](https://github.com/fatedier/frp) and [ngrok](https://github.
 
 ## Features
 
-- **High Performance** Much higher throughput can be achieved than frp, and more stable when handling a large volume of connections. See [Benchmark](#benchmark)
+- **High Performance** Lower latency than frp, and stable when handling a large volume of connections. See [Benchmark](#benchmark)
 - **Low Resource Consumption** Consumes much fewer memory than similar tools. See [Benchmark](#benchmark). [The binary can be](docs/build-guide.md) **as small as ~500KiB** to fit the constraints of devices, like embedded devices as routers.
 - **Security** Tokens of services are mandatory and service-wise. The server and clients are responsible for their own configs. With the optional Noise Protocol, encryption can be configured at ease. No need to create a self-signed certificate! TLS is also supported.
 - **Hot Reload** Services can be added or removed dynamically by hot-reloading the configuration file. HTTP API is WIP.
@@ -199,16 +199,33 @@ If the bandwidth is more important, TCP_NODELAY can be opted out with `nodelay =
 
 ## Benchmark
 
-rathole has similar latency to [frp](https://github.com/fatedier/frp), but can handle a more connections, provide larger bandwidth, with less memory usage.
+Last three releases compared with the latest [frp](https://github.com/fatedier/frp), measured on the loopback interface of a VM with 4 vCPUs. Every value is the median of 3 runs.
 
-For more details, see the separate page [Benchmark](./docs/benchmark.md).
+| Version | Transport | Throughput | Latency p50 | Latency p99 | Connections/s | Peak memory server / client |
+|---|---|---|---|---|---|---|
+| v0.6.3 | tcp | 15.90 Gbit/s | 66 µs | 87 µs | 13260 | 11.0 / 10.9 MiB |
+| v0.6.3 | noise | 3.05 Gbit/s | 71 µs | 101 µs | 5633 | 42.8 / 34.5 MiB |
+| v0.6.3 | tls | 4.37 Gbit/s | 81 µs | 118 µs | 2121 | 20.7 / 24.8 MiB |
+| v0.6.2 | tcp | 14.32 Gbit/s | 67 µs | 89 µs | 12696 | 11.3 / 11.2 MiB |
+| v0.6.2 | noise | 3.04 Gbit/s | 70 µs | 86 µs | 5341 | 43.1 / 34.1 MiB |
+| v0.6.2 | tls | 4.45 Gbit/s | 81 µs | 119 µs | 2017 | 21.0 / 25.0 MiB |
+| v0.6.1 | tcp | 13.37 Gbit/s | 67 µs | 84 µs | 12325 | 11.3 / 11.2 MiB |
+| v0.6.1 | noise | 3.07 Gbit/s | 70 µs | 90 µs | 4561 | 43.2 / 35.4 MiB |
+| v0.6.1 | tls | 4.33 Gbit/s | 81 µs | 126 µs | 840 | 20.8 / 25.5 MiB |
+| frp v0.71.1 | tcp | 11.46 Gbit/s | 105 µs | 134 µs | 5739 | 50.4 / 44.3 MiB |
+| frp v0.71.1 | tls | 3.92 Gbit/s | 111 µs | 149 µs | 5594 | 50.5 / 65.1 MiB |
+
+rathole has lower latency than frp and uses less memory. frp multiplexes all forwarded connections over one connection, so with TLS it opens new connections faster. The tcp throughput varies by up to 20 % between runs.
+
+All versions back to v0.5.0, the setup and what each column means are in [Benchmark results](./docs/benchmark-results.md). The benchmark only runs on request:
+
+```shell
+cargo bench --bench tunnel
+```
+
+The original benchmark from 2021 with HTTP load and graphs is on the separate page [Benchmark](./docs/benchmark.md).
 
 **However, don't take it from here that `rathole` can magically make your forwarded service faster several times than before.** The benchmark is done on local loopback, indicating the performance when the task is cpu-bounded. One can gain quite a improvement if the network is not the bottleneck. Unfortunately, that's not true for many users. In that case, the main benefit is lower resource consumption, while the bandwidth and the latency may not improved significantly.
-
-![http_throughput](./docs/img/http_throughput.svg)
-![tcp_bitrate](./docs/img/tcp_bitrate.svg)
-![udp_bitrate](./docs/img/udp_bitrate.svg)
-![mem](./docs/img/mem-graph.png)
 
 ## Planning
 
