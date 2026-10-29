@@ -1,3 +1,4 @@
+# This file was changed in the fork at https://github.com/chrisvgt/rathole, see NOTICE.
 name: Release
 
 on:
@@ -127,13 +128,17 @@ jobs:
         with:
           name: rathole-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/${{ matrix.exe }}
+      # The Apache License requires a copy of the license with every binary
+      - name: Add license files
+        shell: bash
+        run: cp LICENSE NOTICE target/${{ matrix.target }}/release/
       - name: Zip Release
         uses: TheDoctor0/zip-release@0.7.6
         with:
           type: zip
           filename: rathole-${{ matrix.target }}.zip
           directory: target/${{ matrix.target }}/release/
-          path: ${{ matrix.exe }}
+          path: ${{ matrix.exe }} LICENSE NOTICE
       - name: Checksum
         shell: bash
         working-directory: target/${{ matrix.target }}/release
