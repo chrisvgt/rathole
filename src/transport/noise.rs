@@ -1,11 +1,12 @@
 use std::net::SocketAddr;
 
+use super::noise_stream::NoiseStream;
 use super::{AddrMaybeCached, SocketOpts, TcpTransport, Transport};
 use crate::config::{NoiseConfig, TransportConfig};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use snowstorm::{Builder, NoiseParams, NoiseStream};
+use snow::{params::NoiseParams, Builder};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 
 pub struct NoiseTransport {
@@ -36,7 +37,7 @@ impl NoiseTransport {
 impl Transport for NoiseTransport {
     type Acceptor = TcpListener;
     type RawStream = TcpStream;
-    type Stream = snowstorm::stream::NoiseStream<TcpStream>;
+    type Stream = NoiseStream<TcpStream>;
 
     fn new(config: &TransportConfig) -> Result<Self> {
         let tcp = TcpTransport::new(config)?;

@@ -328,7 +328,7 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
     let service_config = match service_config {
         Some(v) => v,
         None => {
-            conn.write_all(&protocol::encode(&Ack::AuthFailed)?).await?;
+            write_and_flush(&mut conn, &protocol::encode(&Ack::AuthFailed)?).await?;
             bail!("No such a service {}", hex::encode(service_digest));
         }
     };
@@ -348,7 +348,7 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
     // Validate
     let session_key = protocol::digest(&concat);
     if !bool::from(session_key.ct_eq(&d)) {
-        conn.write_all(&protocol::encode(&Ack::AuthFailed)?).await?;
+        write_and_flush(&mut conn, &protocol::encode(&Ack::AuthFailed)?).await?;
         bail!("Service {} failed the authentication", service_name);
     } else {
         // Send ack
@@ -717,6 +717,7 @@ async fn run_udp_connection_pool<T: Transport>(
             val = l.recv_from(&mut buf) => {
                 let (n, from) = val?;
                 UdpTraffic::write_slice(&mut conn, from, &buf[..n]).await?;
+                conn.flush().await?;
             },
 
             // Forward outbound traffic from the client to the visitor
