@@ -1,3 +1,4 @@
+// This file was changed in the fork at https://github.com/chrisvgt/rathole, see NOTICE.
 use crate::backoff::ExponentialBackoff;
 use crate::config::{Config, ServerConfig, ServerServiceConfig, ServiceType, TransportType};
 use crate::config_watcher::{ConfigChange, ServerServiceChange};

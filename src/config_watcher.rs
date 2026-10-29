@@ -1,3 +1,4 @@
+// This file was changed in the fork at https://github.com/chrisvgt/rathole, see NOTICE.
 use crate::{
     config::{ClientConfig, ClientServiceConfig, ServerConfig, ServerServiceConfig},
     Config,

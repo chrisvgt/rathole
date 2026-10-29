@@ -1,3 +1,4 @@
+// This file was changed in the fork at https://github.com/chrisvgt/rathole, see NOTICE.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use anyhow::{Ok, Result};

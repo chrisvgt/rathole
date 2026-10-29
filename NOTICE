@@ -1,0 +1,16 @@
+rathole
+
+This product is a modified version of rathole, originally written by
+Yujia Qiao and the rathole contributors:
+https://github.com/rapiz1/rathole (now https://github.com/rathole-org/rathole)
+
+rathole is licensed under the Apache License, Version 2.0. A copy of the
+license is in the LICENSE file.
+
+This fork is maintained by chrisvgt at https://github.com/chrisvgt/rathole.
+The modifications are licensed under the Apache License, Version 2.0 as well.
+
+Files changed in this fork carry a notice at the top. The certificates in
+examples/tls were regenerated with the script in that directory. The full
+list of changes is in the git history:
+https://github.com/chrisvgt/rathole/compare/5a9dd6d939744859af322aeff7fd60f7483a68bc...main

@@ -1,3 +1,4 @@
+// This file was changed in the fork at https://github.com/chrisvgt/rathole, see NOTICE.
 use crate::backoff::{retry_notify, ExponentialBackoff};
 use crate::config::{ClientConfig, ClientServiceConfig, Config, ServiceType, TransportType};
 use crate::config_watcher::{ClientServiceChange, ConfigChange};

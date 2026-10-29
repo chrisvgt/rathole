@@ -1,3 +1,4 @@
+// This file was changed in the fork at https://github.com/chrisvgt/rathole, see NOTICE.
 use anyhow::Result;
 use vergen_gitcl::{Build, Cargo, Emitter, Gitcl};
 

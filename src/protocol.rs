@@ -1,3 +1,4 @@
+// This file was changed in the fork at https://github.com/chrisvgt/rathole, see NOTICE.
 pub const HASH_WIDTH_IN_BYTES: usize = 32;
 
 use anyhow::{bail, Context, Result};
