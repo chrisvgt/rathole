@@ -1,4 +1,3 @@
-// This file was changed in the fork at https://github.com/chrisvgt/rathole, see NOTICE.
 mod backoff;
 mod cli;
 mod config;

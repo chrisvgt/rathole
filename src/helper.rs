@@ -1,4 +1,3 @@
-// This file was changed in the fork at https://github.com/chrisvgt/rathole, see NOTICE.
 use crate::backoff::{retry_notify, ExponentialBackoff};
 use anyhow::{anyhow, bail, Context, Result};
 use async_http_proxy::{http_connect_tokio, http_connect_tokio_with_basic_auth};

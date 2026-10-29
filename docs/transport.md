@@ -1,5 +1,3 @@
-<!-- This file was changed in the fork at https://github.com/chrisvgt/rathole, see NOTICE. -->
-
 # Security
 
 By default, `rathole` forwards traffic as it is. Different options can be enabled to secure the traffic.

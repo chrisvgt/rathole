@@ -1,4 +1,3 @@
-// This file was changed in the fork at https://github.com/chrisvgt/rathole, see NOTICE.
 use std::net::SocketAddr;
 
 use super::{AddrMaybeCached, SocketOpts, TcpTransport, Transport};

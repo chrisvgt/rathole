@@ -1,4 +1,3 @@
-// This file was changed in the fork at https://github.com/chrisvgt/rathole, see NOTICE.
 use crate::config::{TlsConfig, TransportConfig};
 use crate::helper::host_port_pair;
 use crate::transport::{AddrMaybeCached, SocketOpts, TcpTransport, Transport};

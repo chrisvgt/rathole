@@ -1,4 +1,3 @@
-// This file was changed in the fork at https://github.com/chrisvgt/rathole, see NOTICE.
 use core::result::Result;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
