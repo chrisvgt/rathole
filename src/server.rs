@@ -477,7 +477,7 @@ where
                         shutdown_rx_clone,
                     )
                     .await
-                    .with_context(|| "Failed to run TCP connection pool")
+                    .with_context(|| "Failed to run UDP connection pool")
                     {
                         error!("{:#}", e);
                     }
