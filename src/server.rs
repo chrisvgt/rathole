@@ -314,16 +314,24 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
     conn.write_all(&protocol::encode(&hello_send)?).await?;
     conn.flush().await?;
 
-    // Lookup the service
-    let service_config = match services.read().await.get(&service_digest) {
+    // Lookup the service. The lock is not held across network I/O
+    let service_config = services.read().await.get(&service_digest).cloned();
+
+    // Read auth
+    let protocol::Auth(d) =
+        time::timeout(Duration::from_secs(HANDSHAKE_TIMEOUT), read_auth(&mut conn))
+            .await
+            .with_context(|| "Timeout reading auth")??;
+
+    // An unknown service gets the same answer as a wrong token,
+    // so a peer without a token cannot probe which services exist
+    let service_config = match service_config {
         Some(v) => v,
         None => {
-            conn.write_all(&protocol::encode(&Ack::ServiceNotExist)?)
-                .await?;
+            conn.write_all(&protocol::encode(&Ack::AuthFailed)?).await?;
             bail!("No such a service {}", hex::encode(service_digest));
         }
-    }
-    .to_owned();
+    };
 
     let service_name = &service_config.name;
 
@@ -337,23 +345,16 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
     );
     concat.append(&mut nonce);
 
-    // Read auth
-    let protocol::Auth(d) =
-        time::timeout(Duration::from_secs(HANDSHAKE_TIMEOUT), read_auth(&mut conn))
-            .await
-            .with_context(|| "Timeout reading auth")??;
-
     // Validate
     let session_key = protocol::digest(&concat);
     if !bool::from(session_key.ct_eq(&d)) {
         conn.write_all(&protocol::encode(&Ack::AuthFailed)?).await?;
-        debug!(
-            "Expect {}, but got {}",
-            hex::encode(session_key),
-            hex::encode(d)
-        );
         bail!("Service {} failed the authentication", service_name);
     } else {
+        // Send ack
+        conn.write_all(&protocol::encode(&Ack::Ok)?).await?;
+        conn.flush().await?;
+
         let mut h = control_channels.write().await;
 
         // If there's already a control channel for the service, then drop the old one.
@@ -366,10 +367,6 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
                 service_name
             );
         }
-
-        // Send ack
-        conn.write_all(&protocol::encode(&Ack::Ok)?).await?;
-        conn.flush().await?;
 
         info!(service = %service_config.name, "Control channel established");
         let handle =
@@ -389,23 +386,25 @@ async fn do_data_channel_handshake<T: 'static + Transport>(
 ) -> Result<()> {
     debug!("Try to handshake a data channel");
 
-    // Validate
-    let control_channels_guard = control_channels.read().await;
-    match control_channels_guard.get2(&nonce) {
-        Some(handle) => {
-            T::hint(&conn, SocketOpts::from_server_cfg(&handle.service));
-
-            // Send the data channel to the corresponding control channel
-            handle
-                .data_ch_tx
-                .send(conn)
-                .await
-                .with_context(|| "Data channel for a stale control channel")?;
-        }
+    // Validate. The lock is not held while waiting for the connection pool
+    let (data_ch_tx, socket_opts) = match control_channels.read().await.get2(&nonce) {
+        Some(handle) => (
+            handle.data_ch_tx.clone(),
+            SocketOpts::from_server_cfg(&handle.service),
+        ),
         None => {
             warn!("Data channel has incorrect nonce");
+            return Ok(());
         }
-    }
+    };
+
+    T::hint(&conn, socket_opts);
+
+    // Send the data channel to the corresponding control channel
+    data_ch_tx
+        .send(conn)
+        .await
+        .with_context(|| "Data channel for a stale control channel")?;
     Ok(())
 }
 
@@ -735,4 +734,33 @@ async fn run_udp_connection_pool<T: Transport>(
     debug!("UDP pool dropped");
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::{read_ack, Auth};
+
+    #[tokio::test]
+    async fn test_unknown_service_looks_like_wrong_token() -> Result<()> {
+        let l = TcpListener::bind("127.0.0.1:0").await?;
+        let mut client = TcpStream::connect(l.local_addr()?).await?;
+        let (conn, _) = l.accept().await?;
+
+        let server = tokio::spawn(do_control_channel_handshake::<TcpTransport>(
+            conn,
+            Arc::new(RwLock::new(HashMap::new())),
+            Arc::new(RwLock::new(ControlChannelMap::new())),
+            protocol::digest(b"unknown"),
+            Arc::new(ServerConfig::default()),
+        ));
+
+        read_hello(&mut client).await?;
+        client
+            .write_all(&protocol::encode(&Auth([0u8; HASH_WIDTH_IN_BYTES]))?)
+            .await?;
+        assert!(matches!(read_ack(&mut client).await?, Ack::AuthFailed));
+        assert!(server.await?.is_err());
+        Ok(())
+    }
 }
