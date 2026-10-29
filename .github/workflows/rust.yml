@@ -29,6 +29,15 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Clippy with rustls
         run: cargo clippy --all-targets --no-default-features --features server,client,rustls,noise,websocket-rustls,hot-reload -- -D warnings
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+      - name: Check third-party licenses
+        run: cargo about generate about.hbs -o target/THIRD-PARTY-LICENSES.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: third-party-licenses
+          path: target/THIRD-PARTY-LICENSES.txt
       - name: Setup cargo-hack
         run: cargo install cargo-hack
       - name: Check all features
