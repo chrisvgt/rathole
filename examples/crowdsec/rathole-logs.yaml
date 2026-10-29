@@ -1,0 +1,17 @@
+# /etc/crowdsec/parsers/s01-parse/rathole-logs.yaml
+# Parses failed handshakes on the rathole server port, e.g.
+# ... ERROR connection{addr=203.0.113.5:51234}: rathole::server: Handshake from 203.0.113.5 failed: Transport handshake timeout
+onsuccess: next_stage
+filter: "evt.Parsed.program == 'rathole'"
+name: local/rathole-logs
+description: "Parse failed handshakes on the rathole server port"
+grok:
+  pattern: 'Handshake from %{IP:source_ip} failed: %{GREEDYDATA:reason}'
+  apply_on: message
+statics:
+  - meta: log_type
+    value: rathole_failed_handshake
+  - meta: service
+    value: rathole
+  - meta: source_ip
+    expression: evt.Parsed.source_ip

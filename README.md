@@ -94,6 +94,8 @@ So you can `ssh myserver.com:5202` to ssh to your NAS.
 
 To run `rathole` run as a background service on Linux, checkout the [systemd examples](./examples/systemd).
 
+The server port is reachable from the internet. Use a long random token (`openssl rand -base64 32`), consider the Noise `KK` pattern so that only your client can finish the handshake, see [Transport](./docs/transport.md#bidirectional-authentication), and let [CrowdSec](./examples/crowdsec) ban IPs that keep failing the handshake.
+
 ## Configuration
 
 `rathole` can automatically determine to run in the server mode or the client mode, according to the content of the configuration file, if only one of `[server]` and `[client]` block is present, like the example in [Quickstart](#quickstart).

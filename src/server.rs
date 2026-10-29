@@ -196,8 +196,9 @@ impl<T: 'static + Transport> Server<T> {
                             let control_channels = self.control_channels.clone();
                             let server_config = self.config.clone();
                             tokio::spawn(async move {
+                                // Fixed wording with the bare IP, so fail2ban and CrowdSec can match it
                                 if let Err(err) = handle_connection(transport, conn, services, control_channels, server_config, permit).await {
-                                    error!("{:#}", err);
+                                    error!("Handshake from {} failed: {:#}", addr.ip(), err);
                                 }
                             }.instrument(info_span!("connection", %addr)));
                         }

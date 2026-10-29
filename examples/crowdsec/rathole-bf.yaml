@@ -1,0 +1,20 @@
+# /etc/crowdsec/scenarios/rathole-bf.yaml
+# Bans an IP after more than 5 failed handshakes in a short time. The bucket
+# forgets one failure per minute.
+type: leaky
+name: local/rathole-bf
+description: "Detect repeated failed handshakes on the rathole server port"
+filter: "evt.Meta.log_type == 'rathole_failed_handshake'"
+groupby: evt.Meta.source_ip
+capacity: 5
+leakspeed: 1m
+blackhole: 5m
+labels:
+  service: rathole
+  confidence: 3
+  spoofable: 0
+  classification:
+    - attack.T1110
+  label: "rathole handshake bruteforce"
+  behavior: "tcp:bruteforce"
+  remediation: true

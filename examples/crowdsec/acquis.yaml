@@ -1,0 +1,7 @@
+# /etc/crowdsec/acquis.d/rathole.yaml
+# Reads the log of the rathole server from the journal
+source: journalctl
+journalctl_filter:
+  - "_SYSTEMD_UNIT=rathole.service"
+labels:
+  type: syslog
