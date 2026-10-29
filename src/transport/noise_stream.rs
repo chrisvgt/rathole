@@ -7,6 +7,10 @@
 //!
 //! Buffers grow with the messages that actually arrive instead of being
 //! allocated at the maximum size for every connection.
+//!
+//! The framing and the handshake loop follow snowstorm by black-binary
+//! (https://github.com/black-binary/snowstorm), licensed under the Apache
+//! License, Version 2.0.
 
 use std::io;
 use std::pin::Pin;
