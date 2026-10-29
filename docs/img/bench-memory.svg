@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="320" viewBox="0 0 640 320" font-family="Helvetica, Arial, sans-serif" font-size="12">
+<rect width="640" height="320" fill="#ffffff"/>
+<text x="64" y="22" font-size="15" font-weight="bold" fill="#222">Peak memory, server + client (lower is better)</text>
+<rect x="64" y="34" width="12" height="12" fill="#4292c6"/>
+<text x="80" y="44" fill="#222">v0.6.1</text>
+<rect x="130" y="34" width="12" height="12" fill="#08519c"/>
+<text x="146" y="44" fill="#222">v0.6.2</text>
+<rect x="196" y="34" width="12" height="12" fill="#08306b"/>
+<text x="212" y="44" fill="#222">v0.6.3</text>
+<rect x="262" y="34" width="12" height="12" fill="#e6550d"/>
+<text x="278" y="44" fill="#222">frp v0.71.1</text>
+<line x1="64" y1="280.0" x2="624" y2="280.0" stroke="#ddd"/>
+<text x="58" y="284.0" text-anchor="end" fill="#555">0 MiB</text>
+<line x1="64" y1="226.0" x2="624" y2="226.0" stroke="#ddd"/>
+<text x="58" y="230.0" text-anchor="end" fill="#555">50 MiB</text>
+<line x1="64" y1="172.0" x2="624" y2="172.0" stroke="#ddd"/>
+<text x="58" y="176.0" text-anchor="end" fill="#555">100 MiB</text>
+<line x1="64" y1="118.0" x2="624" y2="118.0" stroke="#ddd"/>
+<text x="58" y="122.0" text-anchor="end" fill="#555">150 MiB</text>
+<line x1="64" y1="64.0" x2="624" y2="64.0" stroke="#ddd"/>
+<text x="58" y="68.0" text-anchor="end" fill="#555">200 MiB</text>
+<rect x="86.3" y="255.4" width="34.0" height="24.6" fill="#4292c6"/>
+<text x="103.3" y="251.4" text-anchor="middle" font-size="10" fill="#333">23</text>
+<rect x="122.3" y="255.8" width="34.0" height="24.2" fill="#08519c"/>
+<text x="139.3" y="251.8" text-anchor="middle" font-size="10" fill="#333">22</text>
+<rect x="158.3" y="255.7" width="34.0" height="24.3" fill="#08306b"/>
+<text x="175.3" y="251.7" text-anchor="middle" font-size="10" fill="#333">22</text>
+<rect x="194.3" y="164.8" width="34.0" height="115.2" fill="#e6550d"/>
+<text x="211.3" y="160.8" text-anchor="middle" font-size="10" fill="#333">107</text>
+<text x="157.3" y="298" text-anchor="middle" fill="#222">tcp</text>
+<rect x="291.0" y="193.7" width="34.0" height="86.3" fill="#4292c6"/>
+<text x="308.0" y="189.7" text-anchor="middle" font-size="10" fill="#333">80</text>
+<rect x="327.0" y="194.8" width="34.0" height="85.2" fill="#08519c"/>
+<text x="344.0" y="190.8" text-anchor="middle" font-size="10" fill="#333">79</text>
+<rect x="363.0" y="196.0" width="34.0" height="84.0" fill="#08306b"/>
+<text x="380.0" y="192.0" text-anchor="middle" font-size="10" fill="#333">78</text>
+<text x="344.0" y="298" text-anchor="middle" fill="#222">noise</text>
+<rect x="459.7" y="230.1" width="34.0" height="49.9" fill="#4292c6"/>
+<text x="476.7" y="226.1" text-anchor="middle" font-size="10" fill="#333">46</text>
+<rect x="495.7" y="230.1" width="34.0" height="49.9" fill="#08519c"/>
+<text x="512.7" y="226.1" text-anchor="middle" font-size="10" fill="#333">46</text>
+<rect x="531.7" y="230.3" width="34.0" height="49.7" fill="#08306b"/>
+<text x="548.7" y="226.3" text-anchor="middle" font-size="10" fill="#333">46</text>
+<rect x="567.7" y="144.9" width="34.0" height="135.1" fill="#e6550d"/>
+<text x="584.7" y="140.9" text-anchor="middle" font-size="10" fill="#333">125</text>
+<text x="530.7" y="298" text-anchor="middle" fill="#222">tls</text>
+</svg>

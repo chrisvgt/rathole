@@ -219,6 +219,9 @@ Test machine: VM with 4 vCPUs (Intel, 2.5 GHz) and 8 GB RAM, Linux, Rust 1.99.1.
 
 ↑ higher is better, ↓ lower is better.
 
+<img src="./docs/img/bench-throughput.svg" width="49%"> <img src="./docs/img/bench-latency.svg" width="49%">
+<img src="./docs/img/bench-connections.svg" width="49%"> <img src="./docs/img/bench-memory.svg" width="49%">
+
 rathole has lower latency than frp and uses less memory, the throughput is about the same. frp multiplexes all forwarded connections over one connection, so with TLS it opens new connections faster. Throughput and connection rate vary by up to 20 % between runs.
 
 All versions back to v0.5.0, the setup and what each column means are in [Benchmark results](./docs/benchmark-results.md). The benchmark only runs on request:

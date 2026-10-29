@@ -65,6 +65,17 @@ For frp, `tcp` means `transport.tls.enable = false` and `tls` is frp's default. 
 - rathole opens a new connection to the server for every forwarded connection. frp multiplexes all of them over one connection, so it does not pay for a new TLS handshake each time. That is why frp opens more connections per second with tls, but fewer without encryption.
 - Compared with frp, rathole has about a third lower latency and uses about a fifth of the memory without encryption. The throughput is about the same.
 
+## Compared with 2021
+
+The [original benchmark](benchmark.md) from 2021 measured rathole and frp 0.38 with iperf3 on two Xeon E5-2620. The hardware and the tools differ, so only the ratio between rathole and frp can be compared, not the absolute numbers.
+
+| | 2021 rathole | 2021 frp 0.38 | 2026 rathole v0.6.3 | 2026 frp v0.71.1 |
+|---|---|---|---|---|
+| TCP throughput | 3.6 Gbit/s | 0.8 Gbit/s | 12.5 Gbit/s | 12.3 Gbit/s |
+| Memory server / client | about 8 / 7 MB | about 67 / 62 MB | 11 / 11 MiB | 54 / 53 MiB |
+
+In 2021 rathole had about 4 times the throughput of frp. frp has caught up since then and both are now about the same. rathole still needs about a fifth of the memory.
+
 ## Running it
 
 The benchmark is not part of `cargo test` and only runs on request. It needs Linux for the memory column.
@@ -81,6 +92,9 @@ cargo bench --bench tunnel -- --help
 
 # Build tags, download frp (latest or FRP_VERSION) and compare them
 benches/scripts/compare.sh v0.6.1 v0.6.2 v0.6.3 -- --rounds 3
+
+# Draw the README charts from a result table (Python 3, no other dependencies)
+benches/scripts/charts.py docs/benchmark-results.md docs/img v0.6.1 v0.6.2 v0.6.3 "frp v0.71.1"
 ```
 
 `compare.sh` needs git, cargo, curl and the GitHub CLI (only to look up the latest frp version). It verifies the frp download against frp's published SHA256 checksums.

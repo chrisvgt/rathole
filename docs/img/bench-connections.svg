@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="320" viewBox="0 0 640 320" font-family="Helvetica, Arial, sans-serif" font-size="12">
+<rect width="640" height="320" fill="#ffffff"/>
+<text x="64" y="22" font-size="15" font-weight="bold" fill="#222">New connections per second (higher is better)</text>
+<rect x="64" y="34" width="12" height="12" fill="#4292c6"/>
+<text x="80" y="44" fill="#222">v0.6.1</text>
+<rect x="130" y="34" width="12" height="12" fill="#08519c"/>
+<text x="146" y="44" fill="#222">v0.6.2</text>
+<rect x="196" y="34" width="12" height="12" fill="#08306b"/>
+<text x="212" y="44" fill="#222">v0.6.3</text>
+<rect x="262" y="34" width="12" height="12" fill="#e6550d"/>
+<text x="278" y="44" fill="#222">frp v0.71.1</text>
+<line x1="64" y1="280.0" x2="624" y2="280.0" stroke="#ddd"/>
+<text x="58" y="284.0" text-anchor="end" fill="#555">0</text>
+<line x1="64" y1="226.0" x2="624" y2="226.0" stroke="#ddd"/>
+<text x="58" y="230.0" text-anchor="end" fill="#555">5000</text>
+<line x1="64" y1="172.0" x2="624" y2="172.0" stroke="#ddd"/>
+<text x="58" y="176.0" text-anchor="end" fill="#555">10000</text>
+<line x1="64" y1="118.0" x2="624" y2="118.0" stroke="#ddd"/>
+<text x="58" y="122.0" text-anchor="end" fill="#555">15000</text>
+<line x1="64" y1="64.0" x2="624" y2="64.0" stroke="#ddd"/>
+<text x="58" y="68.0" text-anchor="end" fill="#555">20000</text>
+<rect x="86.3" y="145.2" width="34.0" height="134.8" fill="#4292c6"/>
+<text x="103.3" y="141.2" text-anchor="middle" font-size="10" fill="#333">12480</text>
+<rect x="122.3" y="143.3" width="34.0" height="136.7" fill="#08519c"/>
+<text x="139.3" y="139.3" text-anchor="middle" font-size="10" fill="#333">12656</text>
+<rect x="158.3" y="156.1" width="34.0" height="123.9" fill="#08306b"/>
+<text x="175.3" y="152.1" text-anchor="middle" font-size="10" fill="#333">11469</text>
+<rect x="194.3" y="211.4" width="34.0" height="68.6" fill="#e6550d"/>
+<text x="211.3" y="207.4" text-anchor="middle" font-size="10" fill="#333">6356</text>
+<text x="157.3" y="298" text-anchor="middle" fill="#222">tcp</text>
+<rect x="291.0" y="237.4" width="34.0" height="42.6" fill="#4292c6"/>
+<text x="308.0" y="233.4" text-anchor="middle" font-size="10" fill="#333">3942</text>
+<rect x="327.0" y="222.2" width="34.0" height="57.8" fill="#08519c"/>
+<text x="344.0" y="218.2" text-anchor="middle" font-size="10" fill="#333">5354</text>
+<rect x="363.0" y="222.8" width="34.0" height="57.2" fill="#08306b"/>
+<text x="380.0" y="218.8" text-anchor="middle" font-size="10" fill="#333">5300</text>
+<text x="344.0" y="298" text-anchor="middle" fill="#222">noise</text>
+<rect x="459.7" y="271.1" width="34.0" height="8.9" fill="#4292c6"/>
+<text x="476.7" y="267.1" text-anchor="middle" font-size="10" fill="#333">824</text>
+<rect x="495.7" y="257.8" width="34.0" height="22.2" fill="#08519c"/>
+<text x="512.7" y="253.8" text-anchor="middle" font-size="10" fill="#333">2051</text>
+<rect x="531.7" y="259.3" width="34.0" height="20.7" fill="#08306b"/>
+<text x="548.7" y="255.3" text-anchor="middle" font-size="10" fill="#333">1914</text>
+<rect x="567.7" y="219.2" width="34.0" height="60.8" fill="#e6550d"/>
+<text x="584.7" y="215.2" text-anchor="middle" font-size="10" fill="#333">5632</text>
+<text x="530.7" y="298" text-anchor="middle" fill="#222">tls</text>
+</svg>
