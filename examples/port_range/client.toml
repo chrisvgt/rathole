@@ -1,0 +1,17 @@
+# A service that needs TCP 7000-7004 and UDP 7001
+[client]
+remote_addr = "example.com:2333"
+default_token = "use_a_long_random_token"
+
+[client.transport]
+type = "noise"
+[client.transport.noise]
+remote_public_key = "generate_with_rathole_--genkey"
+
+[client.services.app]
+type = "tcp"
+local_addr = "127.0.0.1:7000-7004"
+
+[client.services.app-udp]
+type = "udp"
+local_addr = "127.0.0.1:7001"

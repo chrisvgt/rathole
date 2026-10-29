@@ -1,0 +1,17 @@
+# A service that needs TCP 7000-7004 and UDP 7001
+[server]
+bind_addr = "0.0.0.0:2333"
+default_token = "use_a_long_random_token"
+
+[server.transport]
+type = "noise"
+[server.transport.noise]
+local_private_key = "generate_with_rathole_--genkey"
+
+[server.services.app]
+type = "tcp"
+bind_addr = "0.0.0.0:7000-7004"
+
+[server.services.app-udp]
+type = "udp"
+bind_addr = "0.0.0.0:7001"

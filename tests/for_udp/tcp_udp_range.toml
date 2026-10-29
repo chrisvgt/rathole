@@ -1,0 +1,16 @@
+# One port range with type = "tcp+udp" for an echo and a pingpong server
+[client]
+remote_addr = "127.0.0.1:2343"
+default_token = "default_token_if_not_specify"
+
+[client.services.range]
+type = "tcp+udp"
+local_addr = "127.0.0.1:8092-8093"
+
+[server]
+bind_addr = "0.0.0.0:2343"
+default_token = "default_token_if_not_specify"
+
+[server.services.range]
+type = "tcp+udp"
+bind_addr = "0.0.0.0:2344-2345"

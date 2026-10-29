@@ -135,9 +135,9 @@ remote_public_key = "key_encoded_in_base64" # Optional
 tls = true # If `true` then it will use settings in `client.transport.tls`
 
 [client.services.service1] # A service that needs forwarding. The name `service1` can change arbitrarily, as long as identical to the name in the server's configuration
-type = "tcp" # Optional. The protocol that needs forwarding. Possible values: ["tcp", "udp"]. Default: "tcp"
+type = "tcp" # Optional. The protocol that needs forwarding. Possible values: ["tcp", "udp", "tcp+udp"]. Default: "tcp"
 token = "whatever" # Necessary if `client.default_token` not set
-local_addr = "127.0.0.1:1081" # Necessary. The address of the service that needs to be forwarded
+local_addr = "127.0.0.1:1081" # Necessary. The address of the service that needs to be forwarded. Can be a port range, see below
 nodelay = true # Optional. Override the `client.transport.nodelay` per service
 retry_interval = 1 # Optional. The interval between retry to connect to the server. Default: inherits the global config
 
@@ -172,12 +172,32 @@ tls = true # If `true` then it will use settings in `server.transport.tls`
 [server.services.service1] # The service name must be identical to the client side
 type = "tcp" # Optional. Same as the client `[client.services.X.type]
 token = "whatever" # Necessary if `server.default_token` not set
-bind_addr = "0.0.0.0:8081" # Necessary. The address of the service is exposed at. Generally only the port needs to be change.
+bind_addr = "0.0.0.0:8081" # Necessary. The address of the service is exposed at. Generally only the port needs to be change. Can be a port range, see below
 nodelay = true # Optional. Same as the client
 
 [server.services.service2]
 bind_addr = "0.0.0.1:8082"
 ```
+
+### Port ranges and TCP+UDP
+
+A service can cover a range of up to 100 ports, and `type = "tcp+udp"` forwards both protocols on the same ports. For example, a service that needs TCP 7000-7004 and UDP 7001:
+
+```toml
+[server.services.app]
+bind_addr = "0.0.0.0:7000-7004"
+[server.services.app-udp]
+type = "udp"
+bind_addr = "0.0.0.0:7001"
+
+[client.services.app]
+local_addr = "127.0.0.1:7000-7004"
+[client.services.app-udp]
+type = "udp"
+local_addr = "127.0.0.1:7001"
+```
+
+Server and client must use the same type and the same number of ports, the first port of the server forwards to the first port of the client and so on. Both sides need v0.6.4 or later for this. Each port and protocol runs as a service of its own, named like `app#0` or `game#2/udp` in the logs. Two services that bind the same port with the same protocol are rejected. The full example is in [examples/port_range](./examples/port_range).
 
 ### Logging
 
