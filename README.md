@@ -11,7 +11,7 @@
 
 A secure, stable and high-performance reverse proxy for NAT traversal, written in Rust
 
-This is a maintained fork of [rathole-org/rathole](https://github.com/rathole-org/rathole) (Apache-2.0). Dependencies are kept up to date and security issues are fixed. Releases are built from `main`; development happens on `develop`. Note that 0.6.0 changed the wire protocol, so client and server must be updated together.
+This is a maintained fork of [rathole-org/rathole](https://github.com/rathole-org/rathole) (Apache-2.0, see [NOTICE](NOTICE)). Dependencies are kept up to date and security issues are fixed. Releases are built from `main`; development happens on `develop`. Note that 0.6.0 changed the wire protocol, so client and server must be updated together.
 
 rathole, like [frp](https://github.com/fatedier/frp) and [ngrok](https://github.com/inconshreveable/ngrok), can help to expose the service on the device behind the NAT to the Internet, via a server with a public IP.
 

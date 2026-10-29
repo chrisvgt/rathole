@@ -1,6 +1,6 @@
 [package]
 name = "rathole"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2021"
 authors = ["Yujia Qiao <code@rapiz.me>"]
 description = "A reverse proxy for NAT traversal"
@@ -8,7 +8,7 @@ license = "Apache-2.0"
 repository = "https://github.com/rapiz1/rathole"
 readme = "README.md"
 build = "build.rs"
-include = ["src/**/*", "LICENSE", "README.md", "build.rs"]
+include = ["src/**/*", "LICENSE", "NOTICE", "README.md", "build.rs"]
 
 [features]
 default = [
@@ -81,6 +81,9 @@ inherits = "release"
 opt-level = "z"
 lto = true
 codegen-units = 1
+
+[lints.rust]
+unsafe_code = "forbid"
 
 [lints.clippy]
 unwrap_used = "warn"

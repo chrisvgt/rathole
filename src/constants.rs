@@ -6,6 +6,8 @@ use std::time::Duration;
 pub const UDP_BUFFER_SIZE: usize = 2048;
 pub const UDP_SENDQ_SIZE: usize = 1024;
 pub const UDP_TIMEOUT: u64 = 60;
+/// Maximum number of visitors a UDP data channel keeps a local socket for
+pub const UDP_MAX_FORWARDERS: usize = 4096;
 
 pub fn listen_backoff() -> ExponentialBackoff {
     ExponentialBackoff {

@@ -26,7 +26,9 @@ use crate::transport::TlsTransport;
 #[cfg(any(feature = "websocket-native-tls", feature = "websocket-rustls"))]
 use crate::transport::WebsocketTransport;
 
-use crate::constants::{run_control_chan_backoff, UDP_BUFFER_SIZE, UDP_SENDQ_SIZE, UDP_TIMEOUT};
+use crate::constants::{
+    run_control_chan_backoff, UDP_BUFFER_SIZE, UDP_MAX_FORWARDERS, UDP_SENDQ_SIZE, UDP_TIMEOUT,
+};
 
 // The entrypoint of running a client
 pub async fn run_client(
@@ -260,6 +262,15 @@ async fn run_data_channel_for_udp<T: Transport>(
     local_addr: &str,
     prefer_ipv6: bool,
 ) -> Result<()> {
+    forward_udp::<T>(conn, local_addr, prefer_ipv6, UDP_MAX_FORWARDERS).await
+}
+
+async fn forward_udp<T: Transport>(
+    conn: T::Stream,
+    local_addr: &str,
+    prefer_ipv6: bool,
+    max_forwarders: usize,
+) -> Result<()> {
     debug!("New data channel starts forwarding");
 
     let port_map: UdpPortMap = Arc::new(RwLock::new(HashMap::new()));
@@ -286,6 +297,9 @@ async fn run_data_channel_for_udp<T: Transport>(
         }
     });
 
+    // Whether the forwarder limit was reported since it was last reached
+    let mut limit_reported = false;
+
     loop {
         // Read a packet from the server
         let hdr_len = rd.read_u8().await?;
@@ -299,8 +313,25 @@ async fn run_data_channel_for_udp<T: Transport>(
             // which is not in the UdpPortMap.
             // So set up a mapping (and a forwarder) for it
 
+            // Every visitor address costs a local socket, and visitor addresses
+            // can be spoofed. Drop packets from new visitors once the limit is reached
+            if m.len() >= max_forwarders {
+                if !limit_reported {
+                    warn!(
+                        "Too many UDP visitors ({}). Dropping packets from new visitors",
+                        max_forwarders
+                    );
+                    limit_reported = true;
+                }
+                continue;
+            }
+
             // Drop the reader lock
             drop(m);
+
+            // Connect before grabbing the writer lock, so the forwarders
+            // are not blocked while resolving `local_addr`
+            let s = udp_connect(local_addr, prefer_ipv6).await;
 
             // Grab the writer lock
             // This is the only thread that will try to grab the writer lock
@@ -309,8 +340,9 @@ async fn run_data_channel_for_udp<T: Transport>(
             // grabbing the writer lock
             let mut m = port_map.write().await;
 
-            match udp_connect(local_addr, prefer_ipv6).await {
+            match s {
                 Ok(s) => {
+                    limit_reported = false;
                     let (inbound_tx, inbound_rx) = mpsc::channel(UDP_SENDQ_SIZE);
                     m.insert(packet.from, inbound_tx);
                     tokio::spawn(run_udp_forwarder(
@@ -569,5 +601,43 @@ impl ControlChannelHandle {
     fn shutdown(self) {
         // A send failure shows that the actor has already shutdown.
         let _ = self.shutdown_tx.send(0u8);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+    use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn test_udp_forwarder_limit() -> Result<()> {
+        // The local service
+        let service = UdpSocket::bind("127.0.0.1:0").await?;
+        let local_addr = service.local_addr()?.to_string();
+
+        // The data channel. The server writes to `server`
+        let l = TcpListener::bind("127.0.0.1:0").await?;
+        let conn = TcpStream::connect(l.local_addr()?).await?;
+        let (mut server, _) = l.accept().await?;
+        tokio::spawn(async move {
+            let _ = forward_udp::<TcpTransport>(conn, &local_addr, false, 2).await;
+        });
+
+        // Three visitors, only two of them get a local socket
+        for port in 1..=3u16 {
+            let from: SocketAddr = format!("192.0.2.1:{port}").parse()?;
+            UdpTraffic::write_slice(&mut server, from, b"x").await?;
+        }
+
+        let mut sockets = HashSet::new();
+        let mut buf = [0u8; 16];
+        while let Ok(v) =
+            time::timeout(Duration::from_millis(500), service.recv_from(&mut buf)).await
+        {
+            sockets.insert(v?.1);
+        }
+        assert_eq!(sockets.len(), 2);
+        Ok(())
     }
 }
