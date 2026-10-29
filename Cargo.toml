@@ -82,6 +82,9 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 
+[lints.rust]
+unsafe_code = "forbid"
+
 [lints.clippy]
 unwrap_used = "warn"
 expect_used = "warn"
