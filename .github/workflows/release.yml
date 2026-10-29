@@ -170,7 +170,9 @@ jobs:
           body: |
             **New:** a service can forward a range of up to 100 ports (`bind_addr = "0.0.0.0:7000-7004"`), and `type = "tcp+udp"` forwards both protocols on the same ports. Both sides need 0.6.4 to use this, everything else stays compatible with 0.6.0 and later.
 
-            **Noise:** a noise connection no longer reserves 192 KiB of buffers up front, so servers with many noise connections need much less memory. No protocol change.
+            **Faster:** noise uses the assembly ciphers of `ring` and forwarded connections larger buffers, about twice the noise and a third more TLS throughput. A noise connection no longer reserves 192 KiB of buffers up front. No protocol change.
+
+            **Security:** a warning for tokens shorter than 16 characters, and failed handshakes are logged as `Handshake from <ip> failed`, with an example for CrowdSec in `examples/crowdsec`.
 
             Also: the README now has a benchmark against v0.5.0 and frp, updated after every release.
           draft: true
