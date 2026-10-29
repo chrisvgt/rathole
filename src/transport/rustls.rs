@@ -9,7 +9,7 @@ use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio_rustls::rustls::pki_types::pem::PemObject;
 use tokio_rustls::rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer, ServerName};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use p12::PFX;
 use tokio_rustls::rustls::{ClientConfig, RootCertStore, ServerConfig};
@@ -62,27 +62,37 @@ fn load_server_config(config: &TlsConfig) -> Result<Option<ServerConfig>> {
     }
 }
 
-fn load_client_config(config: &TlsConfig) -> Result<Option<ClientConfig>> {
-    let cert = if let Some(path) = config.trusted_root.as_ref() {
-        CertificateDer::pem_file_iter(path)
+fn load_root_certs(config: &TlsConfig) -> Result<RootCertStore> {
+    let mut root_certs = RootCertStore::empty();
+
+    if let Some(path) = config.trusted_root.as_ref() {
+        for cert in CertificateDer::pem_file_iter(path)
             .with_context(|| format!("Failed to open certificate {path}"))?
-            .next()
-            .with_context(|| "Failed to read certificate")?
-            .with_context(|| "Failed to parse certificate")?
+        {
+            root_certs
+                .add(cert.with_context(|| format!("Failed to parse certificate {path}"))?)
+                .with_context(|| format!("Invalid certificate in {path}"))?;
+        }
+        if root_certs.is_empty() {
+            bail!("No certificate found in {path}");
+        }
     } else {
         // read from native
         let native = rustls_native_certs::load_native_certs();
         for e in &native.errors {
             eprintln!("Failed to load native certs: {}", e);
         }
-        match native.certs.into_iter().next() {
-            Some(cert) => cert,
-            None => return Ok(None),
-        }
-    };
+        root_certs.add_parsable_certificates(native.certs);
+    }
 
-    let mut root_certs = RootCertStore::empty();
-    root_certs.add(cert)?;
+    Ok(root_certs)
+}
+
+fn load_client_config(config: &TlsConfig) -> Result<Option<ClientConfig>> {
+    let root_certs = load_root_certs(config)?;
+    if root_certs.is_empty() {
+        return Ok(None);
+    }
 
     Ok(Some(
         ClientConfig::builder()
@@ -149,7 +159,9 @@ impl Transport for TlsTransport {
         let connector = self
             .connector
             .as_ref()
-            .with_context(|| "TLS connector is not configured")?;
+            .with_context(|| {
+                "No trusted root certificate. Set `tls.trusted_root` or install the system CA certificates"
+            })?;
 
         let host_name = self
             .config
@@ -167,4 +179,29 @@ impl Transport for TlsTransport {
 
 pub(crate) fn get_tcpstream(s: &TlsStream<TcpStream>) -> &TcpStream {
     s.get_ref().0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_all_trusted_roots() -> Result<()> {
+        let mut bundle = fs::read("examples/tls/server.crt")?;
+        bundle.extend(fs::read("examples/tls/rootCA.crt")?);
+        let path = std::env::temp_dir().join(format!("rathole-bundle-{}.crt", std::process::id()));
+        fs::write(&path, bundle)?;
+
+        let config = TlsConfig {
+            hostname: None,
+            trusted_root: Some(path.to_string_lossy().into_owned()),
+            pkcs12: None,
+            pkcs12_password: None,
+        };
+        let roots = load_root_certs(&config);
+        fs::remove_file(&path)?;
+
+        assert_eq!(roots?.len(), 2);
+        Ok(())
+    }
 }

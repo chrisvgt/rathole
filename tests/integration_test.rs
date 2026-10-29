@@ -119,6 +119,59 @@ async fn udp() -> Result<()> {
     Ok(())
 }
 
+// Peers that never finish the transport handshake must not delay other connections
+#[cfg(feature = "noise")]
+#[tokio::test]
+async fn idle_peers() -> Result<()> {
+    const CONFIG: &str = "tests/for_tcp/noise_idle_peers.toml";
+    const SERVER_ADDR: &str = "127.0.0.1:2353";
+    const EXPOSED_ADDR: &str = "127.0.0.1:2354";
+    const LOCAL_ADDR: &str = "127.0.0.1:8090";
+
+    init();
+    if cfg!(not(all(feature = "client", feature = "server"))) {
+        return Ok(());
+    }
+
+    tokio::spawn(async move {
+        if let Err(e) = common::tcp::echo_server(LOCAL_ADDR).await {
+            panic!("Failed to run the echo server for testing: {:?}", e);
+        }
+    });
+
+    let (shutdown_tx, _) = broadcast::channel(1);
+    let shutdown_rx = shutdown_tx.subscribe();
+    let server = tokio::spawn(async move {
+        run_rathole_server(CONFIG, shutdown_rx).await.unwrap();
+    });
+    time::sleep(Duration::from_millis(500)).await;
+
+    // Each of these used to block the accept loop for the whole handshake timeout
+    let mut idle = Vec::new();
+    for _ in 0..4 {
+        idle.push(TcpStream::connect(SERVER_ADDR).await?);
+    }
+
+    let shutdown_rx = shutdown_tx.subscribe();
+    let client = tokio::spawn(async move {
+        run_rathole_client(CONFIG, shutdown_rx).await.unwrap();
+    });
+
+    time::timeout(Duration::from_secs(4), async {
+        while tcp_echo_hitter(EXPOSED_ADDR).await.is_err() {
+            time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("idle peers blocked the server");
+
+    shutdown_tx.send(true)?;
+    let _ = tokio::join!(server, client);
+    drop(idle);
+
+    Ok(())
+}
+
 #[instrument]
 async fn test(config_path: &'static str, t: Type) -> Result<()> {
     if cfg!(not(all(feature = "client", feature = "server"))) {
@@ -302,6 +355,28 @@ async fn udp_pingpong_hitter(addr: &'static str) -> Result<()> {
 
         assert_eq!(rd, PONG.as_bytes());
     }
+
+    Ok(())
+}
+
+// A server that cannot start must return the error instead of idling
+#[tokio::test]
+async fn port_in_use() -> Result<()> {
+    init();
+    if cfg!(not(feature = "server")) {
+        return Ok(());
+    }
+
+    let _busy = std::net::TcpListener::bind("127.0.0.1:2363")?;
+    let (_shutdown_tx, shutdown_rx) = broadcast::channel(1);
+
+    let ret = time::timeout(
+        Duration::from_secs(5),
+        run_rathole_server("tests/for_tcp/port_in_use.toml", shutdown_rx),
+    )
+    .await
+    .expect("the server kept running after failing to bind");
+    assert!(ret.is_err());
 
     Ok(())
 }

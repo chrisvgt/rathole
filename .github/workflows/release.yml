@@ -141,10 +141,13 @@ jobs:
           ZIP: rathole-${{ matrix.target }}.zip
         run: |
           if command -v sha256sum >/dev/null; then
-            sha256sum "$ZIP" > "$ZIP.sha256"
+            hash=$(sha256sum "$ZIP")
           else
-            shasum -a 256 "$ZIP" > "$ZIP.sha256"
+            hash=$(shasum -a 256 "$ZIP")
           fi
+          # Write the line ourselves, sha256sum on Windows may mark the name with '*'
+          printf '%s  %s\n' "${hash%% *}" "$ZIP" > "$ZIP.sha256"
+          grep -Eq '^[0-9a-f]{64}  rathole-[A-Za-z0-9_.-]+\.zip$' "$ZIP.sha256"
           cat "$ZIP.sha256"
       - name: Publish
         uses: softprops/action-gh-release@v3
@@ -155,11 +158,12 @@ jobs:
             target/${{ matrix.target }}/release/rathole-${{ matrix.target }}.zip.sha256
           generate_release_notes: true
           body: |
-            Fixes and dependency updates, no protocol change (compatible with 0.6.0).
+            Security and bug fixes, no protocol change (compatible with 0.6.0 and 0.6.1). Updating the server is recommended.
 
-            - The client no longer aborts on a failed websocket handshake, broken certificate files or a missing pkcs12 password; these now return errors.
-            - Config reload no longer panics when only one of `[server]` or `[client]` changes.
-            - Removed unmaintained and vulnerable dependencies (`rustls-pemfile`, `h2` 0.3, `libgit2`). `cargo audit` is clean.
+            - A peer that connects to the server and stays silent no longer blocks other connections. Before, anyone able to reach the server port could stall a noise, tls or websocket server without knowing a token.
+            - rathole exits with an error if the server or client cannot start, e.g. when the port is in use or the TLS setup is broken. Before, it kept running without doing anything.
+            - Builds with `rustls` trust every certificate in `trusted_root` and in the system store, not only the first one.
+            - Proxy URLs without a port use the default port of the scheme.
           draft: true
   # docker:
   #   name: Publish to Docker Hub

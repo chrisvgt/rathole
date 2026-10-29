@@ -26,7 +26,9 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: Clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy with rustls
+        run: cargo clippy --all-targets --no-default-features --features server,client,rustls,noise,websocket-rustls,hot-reload -- -D warnings
       - name: Setup cargo-hack
         run: cargo install cargo-hack
       - name: Check all features
