@@ -10,6 +10,8 @@
 //! ```
 //!
 //! Without `--rathole` or `--frp` the rathole binary of this tree is tested.
+//! Every run waits for the machine to be idle first and is repeated if other
+//! processes used too much CPU during it (`--max-load`).
 //! `benches/scripts/compare.sh` builds older tags and downloads frp.
 
 use std::fmt::Write as _;
@@ -60,6 +62,15 @@ struct Args {
     /// Runs per version and transport. The table shows the median
     #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..))]
     rounds: u32,
+
+    /// Share of all CPUs in percent that other processes may use. A run is
+    /// only started below it, and repeated if it was exceeded during the run
+    #[arg(long, default_value_t = 10.0)]
+    max_load: f64,
+
+    /// How often a run is repeated because the machine was busy
+    #[arg(long, default_value_t = 3)]
+    retries: u32,
 
     /// Passed by `cargo bench`
     #[arg(long, hide = true)]
@@ -141,6 +152,7 @@ async fn main() -> Result<()> {
     let dir = std::env::temp_dir().join(format!("rathole-bench-{}", std::process::id()));
     std::fs::create_dir_all(&dir)?;
 
+    let mut max_load = 0.0_f64;
     let mut table = String::new();
     writeln!(table, "| Version | Transport | Throughput | Latency p50 | Latency p99 | Connections/s | Peak memory server / client |")?;
     writeln!(table, "|---|---|---|---|---|---|---|")?;
@@ -150,21 +162,42 @@ async fn main() -> Result<()> {
                 continue;
             }
             let mut rows = Vec::new();
-            for round in 1..=args.rounds {
-                eprintln!("{} {} ({}/{})", label, transport.name(), round, args.rounds);
-                match run(target, transport, &services, &dir, args.duration).await {
-                    Ok(r) => rows.push(r),
-                    Err(e) => {
-                        eprintln!("{} {} failed: {:#}", label, transport.name(), e);
-                        break;
+            let mut busy = false;
+            'rounds: for round in 1..=args.rounds {
+                for attempt in 0..=args.retries {
+                    wait_idle(args.max_load).await;
+                    eprint!(
+                        "{} {} ({}/{}): ",
+                        label,
+                        transport.name(),
+                        round,
+                        args.rounds
+                    );
+                    match run(target, transport, &services, &dir, args.duration).await {
+                        Ok((row, load)) => {
+                            eprintln!("{:.1} % CPU used by other processes", load);
+                            if load > args.max_load && attempt < args.retries {
+                                eprintln!("  machine was busy, repeating");
+                                continue;
+                            }
+                            busy |= load > args.max_load;
+                            max_load = max_load.max(load);
+                            rows.push(row);
+                            break;
+                        }
+                        Err(e) => {
+                            eprintln!("failed: {:#}", e);
+                            break 'rounds;
+                        }
                     }
                 }
             }
             match median(rows, args.rounds) {
                 Some(r) => writeln!(
                     table,
-                    "| {} | {} | {:.2} Gbit/s | {} µs | {} µs | {:.0} | {} |",
+                    "| {}{} | {} | {:.2} Gbit/s | {} µs | {} µs | {:.0} | {} |",
                     label,
+                    if busy { " *" } else { "" },
                     transport.name(),
                     r.throughput,
                     r.p50.as_micros(),
@@ -189,9 +222,101 @@ async fn main() -> Result<()> {
 
     std::fs::remove_dir_all(&dir)?;
     println!("{}", system_info());
+    println!(
+        "Other processes used at most {:.1} % CPU during a run.",
+        max_load
+    );
     println!();
     print!("{}", table);
+    if table.contains(" * |") {
+        println!();
+        println!(
+            "\\* Other processes used more than {} % CPU in every attempt.",
+            args.max_load
+        );
+    }
     Ok(())
+}
+
+/// CPU time of the machine and of this process, in clock ticks
+#[derive(Clone, Copy)]
+struct CpuSample {
+    /// user, nice, system and the time the hypervisor gave to other VMs
+    busy: u64,
+    total: u64,
+    own: u64,
+}
+
+fn cpu_sample() -> Option<CpuSample> {
+    let stat = std::fs::read_to_string("/proc/stat").ok()?;
+    // user nice system idle iowait irq softirq steal guest guest_nice. Guest
+    // time is already part of user. irq and softirq are not counted as busy,
+    // as the loopback traffic of the benchmark itself shows up there
+    let t: Vec<u64> = stat
+        .lines()
+        .next()?
+        .split_whitespace()
+        .skip(1)
+        .take(8)
+        .map(|v| v.parse().ok())
+        .collect::<Option<_>>()?;
+    Some(CpuSample {
+        busy: t.first()? + t.get(1)? + t.get(2)? + t.get(7)?,
+        total: t.iter().sum(),
+        own: process_ticks("self")?,
+    })
+}
+
+/// User and system time of a process, in clock ticks
+fn process_ticks(pid: &str) -> Option<u64> {
+    let stat = std::fs::read_to_string(format!("/proc/{}/stat", pid)).ok()?;
+    // The fields after the command name, starting with the state
+    let fields: Vec<&str> = stat
+        .get(stat.rfind(')')? + 1..)?
+        .split_whitespace()
+        .collect();
+    Some(fields.get(11)?.parse::<u64>().ok()? + fields.get(12)?.parse::<u64>().ok()?)
+}
+
+/// Share of all CPUs in percent that processes other than the benchmark,
+/// rathole and frp used between two samples
+fn other_load(before: CpuSample, after: CpuSample, children: u64) -> f64 {
+    let total = after.total.saturating_sub(before.total);
+    if total == 0 {
+        return 0.0;
+    }
+    let other = after
+        .busy
+        .saturating_sub(before.busy)
+        .saturating_sub(after.own.saturating_sub(before.own))
+        .saturating_sub(children);
+    other as f64 * 100.0 / total as f64
+}
+
+/// Waits up to a minute for the machine to become idle
+async fn wait_idle(max_load: f64) {
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        let Some(before) = cpu_sample() else {
+            return;
+        };
+        sleep(Duration::from_secs(1)).await;
+        let Some(after) = cpu_sample() else {
+            return;
+        };
+        let load = other_load(before, after, 0);
+        if load <= max_load {
+            return;
+        }
+        if Instant::now() > deadline {
+            eprintln!("  machine still busy, starting anyway");
+            return;
+        }
+        eprintln!(
+            "  machine busy ({:.1} % CPU used by other processes), waiting",
+            load
+        );
+    }
 }
 
 /// Median of each column, or None if a round failed
@@ -228,14 +353,21 @@ async fn run(
     services: &Services,
     dir: &Path,
     duration: u64,
-) -> Result<Row> {
+) -> Result<(Row, f64)> {
+    let before = cpu_sample();
     let mut tunnel = match target {
         Target::Rathole(bin) => start_rathole(bin, transport, services, dir).await?,
         Target::Frp(frp_dir) => start_frp(frp_dir, transport, services, dir).await?,
     };
     let result = measure(&tunnel, services, duration).await;
     let memory = tunnel.peak_memory();
+    let children = tunnel.cpu_ticks();
+    let after = cpu_sample();
     tunnel.stop().await;
+    let load = match (before, after) {
+        (Some(before), Some(after)) => other_load(before, after, children),
+        _ => 0.0,
+    };
     if result.is_err() {
         for name in ["server.log", "client.log"] {
             if let Ok(log) = std::fs::read_to_string(dir.join(name)) {
@@ -244,13 +376,14 @@ async fn run(
         }
     }
     let (throughput, p50, p99, conn_rate) = result?;
-    Ok(Row {
+    let row = Row {
         throughput,
         p50,
         p99,
         conn_rate,
         memory,
-    })
+    };
+    Ok((row, load))
 }
 
 async fn measure(
@@ -460,6 +593,15 @@ impl Tunnel {
         Some((vm_hwm(self.server.id()?)?, vm_hwm(self.client.id()?)?))
     }
 
+    /// CPU time of server and client so far, in clock ticks
+    fn cpu_ticks(&self) -> u64 {
+        [self.server.id(), self.client.id()]
+            .into_iter()
+            .flatten()
+            .filter_map(|pid| process_ticks(&pid.to_string()))
+            .sum()
+    }
+
     async fn stop(&mut self) {
         let _ = self.client.kill().await;
         let _ = self.server.kill().await;
@@ -581,19 +723,58 @@ async fn hold_connections(echo: SocketAddr) -> Result<()> {
     Ok(())
 }
 
+/// Hardware and OS the benchmark ran on
 fn system_info() -> String {
-    let cpu = std::fs::read_to_string("/proc/cpuinfo")
+    let cpuinfo = std::fs::read_to_string("/proc/cpuinfo").unwrap_or_default();
+    let field = |name: &str| {
+        cpuinfo
+            .lines()
+            .find(|l| l.starts_with(name))
+            .and_then(|l| l.split_once(':'))
+            .map(|(_, v)| v.trim().to_string())
+    };
+    let cpu = field("model name").unwrap_or_else(|| "unknown CPU".to_string());
+    let threads = std::thread::available_parallelism().map_or(0, |n| n.get());
+    let mhz = field("cpu MHz")
+        .and_then(|v| v.parse::<f64>().ok())
+        .map(|v| format!(", {:.0} MHz", v))
+        .unwrap_or_default();
+    // AES-NI and AVX2 speed up the encryption of the tls and noise transports
+    let flags = field("flags").unwrap_or_default();
+    let has = |flag: &str| {
+        if flags.split_whitespace().any(|f| f == flag) {
+            "yes"
+        } else {
+            "no"
+        }
+    };
+    let vm = if has("hypervisor") == "yes" {
+        ", VM"
+    } else {
+        ""
+    };
+    let ram = std::fs::read_to_string("/proc/meminfo")
         .ok()
         .and_then(|s| {
             s.lines()
-                .find(|l| l.starts_with("model name"))
-                .and_then(|l| l.split_once(':'))
-                .map(|(_, v)| v.trim().to_string())
+                .find(|l| l.starts_with("MemTotal:"))
+                .and_then(|l| l.split_whitespace().nth(1))
+                .and_then(|v| v.parse::<f64>().ok())
         })
-        .unwrap_or_else(|| "unknown CPU".to_string());
-    let threads = std::thread::available_parallelism().map_or(0, |n| n.get());
+        .map(|kib| format!("{:.1} GiB RAM", kib / 1024.0 / 1024.0))
+        .unwrap_or_else(|| "unknown RAM".to_string());
     let kernel = std::fs::read_to_string("/proc/sys/kernel/osrelease")
         .map(|s| format!("Linux {}", s.trim()))
         .unwrap_or_else(|_| std::env::consts::OS.to_string());
-    format!("{}, {} threads, {}", cpu, threads, kernel)
+    format!(
+        "{}, {} threads{}{}, AES-NI: {}, AVX2: {}, {}, {}",
+        cpu,
+        threads,
+        mhz,
+        vm,
+        has("aes"),
+        has("avx2"),
+        ram,
+        kernel
+    )
 }
