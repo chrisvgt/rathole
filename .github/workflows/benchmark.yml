@@ -1,16 +1,18 @@
 name: Benchmark
 
-# Benchmarks every release since v0.5.0 against frp after a release is
-# published and opens a pull request against develop with the new README
-# table, charts and docs/benchmark-results.md.
+# Benchmarks every release since v0.5.0 against frp when a release tag is
+# pushed and opens a pull request against main with the new README table,
+# charts and docs/benchmark-results.md.
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
 
   workflow_dispatch:
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
@@ -24,13 +26,14 @@ env:
 jobs:
   benchmark:
     name: Benchmark
-    if: ${{ !github.event.release.prerelease }}
+    # No pre-releases such as v1.0.0-rc.1
+    if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: develop
+          ref: main
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
 
@@ -48,6 +51,12 @@ jobs:
             echo "charts=v0.5.0 $(echo $(echo "$newest" | tac))"
             echo "rust=$(rustc --version | cut -d ' ' -f 2)"
           } >> "$GITHUB_OUTPUT"
+          # Releases are only built from main
+          latest=$(echo "$newest" | head -n 1)
+          if ! git merge-base --is-ancestor "$latest" HEAD; then
+            echo "::error::$latest is not on main"
+            exit 1
+          fi
 
       # Tags do not change, so their binaries are only built once per Rust version
       - uses: actions/cache@v6
@@ -95,6 +104,9 @@ jobs:
           git add README.md docs/benchmark-results.md docs/img
           git commit -m "docs: update benchmark results for $LATEST"
           git push origin "$branch"
-          gh pr create --base develop --head "$branch" \
+          gh pr create --base main --head "$branch" \
             --title "docs: update benchmark results for $LATEST" \
             --body "Benchmark of all releases since v0.5.0 and frp, run by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
+          # Pull requests opened with the workflow token start no workflows,
+          # so the checks main requires are started by hand
+          gh workflow run rust.yml --ref "$branch"
