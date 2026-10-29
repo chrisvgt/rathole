@@ -141,10 +141,13 @@ jobs:
           ZIP: rathole-${{ matrix.target }}.zip
         run: |
           if command -v sha256sum >/dev/null; then
-            sha256sum "$ZIP" > "$ZIP.sha256"
+            hash=$(sha256sum "$ZIP")
           else
-            shasum -a 256 "$ZIP" > "$ZIP.sha256"
+            hash=$(shasum -a 256 "$ZIP")
           fi
+          # Write the line ourselves, sha256sum on Windows may mark the name with '*'
+          printf '%s  %s\n' "${hash%% *}" "$ZIP" > "$ZIP.sha256"
+          grep -Eq '^[0-9a-f]{64}  rathole-[A-Za-z0-9_.-]+\.zip$' "$ZIP.sha256"
           cat "$ZIP.sha256"
       - name: Publish
         uses: softprops/action-gh-release@v3
