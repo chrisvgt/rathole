@@ -15,6 +15,7 @@ pub use constants::UDP_BUFFER_SIZE;
 
 use anyhow::{bail, Context, Result};
 use tokio::sync::{broadcast, mpsc};
+use tokio::task::JoinHandle;
 use tracing::{debug, info};
 
 #[cfg(feature = "client")]
@@ -80,9 +81,18 @@ pub async fn run(args: Cli, shutdown_rx: broadcast::Receiver<bool>) -> Result<()
     let (shutdown_tx, _) = broadcast::channel(1);
 
     // (The join handle of the last instance, The service update channel sender)
-    let mut last_instance: Option<(tokio::task::JoinHandle<_>, mpsc::Sender<ConfigChange>)> = None;
+    let mut last_instance: Option<(JoinHandle<Result<()>>, mpsc::Sender<ConfigChange>)> = None;
 
-    while let Some(e) = cfg_watcher.event_rx.recv().await {
+    loop {
+        let e = tokio::select! {
+            e = cfg_watcher.event_rx.recv() => match e {
+                Some(e) => e,
+                None => break,
+            },
+            // An instance only stops on its own when it failed, e.g. it could not bind
+            ret = wait_instance(&mut last_instance) => return ret,
+        };
+
         match e {
             ConfigChange::General(config) => {
                 if let Some((i, _)) = last_instance {
@@ -115,8 +125,20 @@ pub async fn run(args: Cli, shutdown_rx: broadcast::Receiver<bool>) -> Result<()
     }
 
     let _ = shutdown_tx.send(true);
+    if let Some((i, _)) = last_instance {
+        i.await??;
+    }
 
     Ok(())
+}
+
+async fn wait_instance(
+    instance: &mut Option<(JoinHandle<Result<()>>, mpsc::Sender<ConfigChange>)>,
+) -> Result<()> {
+    match instance {
+        Some((i, _)) => i.await?,
+        None => std::future::pending().await,
+    }
 }
 
 async fn run_instance(

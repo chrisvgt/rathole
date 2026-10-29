@@ -119,6 +119,28 @@ async fn udp() -> Result<()> {
     Ok(())
 }
 
+// A server that cannot start must return the error instead of idling
+#[tokio::test]
+async fn port_in_use() -> Result<()> {
+    init();
+    if cfg!(not(feature = "server")) {
+        return Ok(());
+    }
+
+    let _busy = std::net::TcpListener::bind("127.0.0.1:2363")?;
+    let (_shutdown_tx, shutdown_rx) = broadcast::channel(1);
+
+    let ret = time::timeout(
+        Duration::from_secs(5),
+        run_rathole_server("tests/for_tcp/port_in_use.toml", shutdown_rx),
+    )
+    .await
+    .expect("the server kept running after failing to bind");
+    assert!(ret.is_err());
+
+    Ok(())
+}
+
 #[instrument]
 async fn test(config_path: &'static str, t: Type) -> Result<()> {
     if cfg!(not(all(feature = "client", feature = "server"))) {

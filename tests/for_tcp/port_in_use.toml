@@ -1,0 +1,6 @@
+[server]
+bind_addr = "127.0.0.1:2363"
+default_token = "default_token_if_not_specify"
+
+[server.services.echo]
+bind_addr = "127.0.0.1:2364"
