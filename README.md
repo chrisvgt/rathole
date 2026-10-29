@@ -30,7 +30,7 @@ rathole, like [frp](https://github.com/fatedier/frp) and [ngrok](https://github.
 
 ## Features
 
-- **High Performance** Much higher throughput can be achieved than frp, and more stable when handling a large volume of connections. See [Benchmark](#benchmark)
+- **High Performance** Lower latency than frp, and stable when handling a large volume of connections. See [Benchmark](#benchmark)
 - **Low Resource Consumption** Consumes much fewer memory than similar tools. See [Benchmark](#benchmark). [The binary can be](docs/build-guide.md) **as small as ~500KiB** to fit the constraints of devices, like embedded devices as routers.
 - **Security** Tokens of services are mandatory and service-wise. The server and clients are responsible for their own configs. With the optional Noise Protocol, encryption can be configured at ease. No need to create a self-signed certificate! TLS is also supported.
 - **Hot Reload** Services can be added or removed dynamically by hot-reloading the configuration file. HTTP API is WIP.
@@ -199,16 +199,44 @@ If the bandwidth is more important, TCP_NODELAY can be opted out with `nodelay =
 
 ## Benchmark
 
-rathole has similar latency to [frp](https://github.com/fatedier/frp), but can handle a more connections, provide larger bandwidth, with less memory usage.
+v0.5.0, the version this fork started from, and the last two releases, compared with [frp](https://github.com/fatedier/frp) v0.38.0 from the original benchmark and the latest frp. Measured on the loopback interface, every value is the median of 3 runs.
 
-For more details, see the separate page [Benchmark](./docs/benchmark.md).
+<!-- bench:readme -->
+Test machine: VM with 4 vCPUs (Intel, 2.5 GHz) and 8 GB RAM, Linux, Rust 1.99.1.
+
+| Version | Transport | Throughput ↑ | Latency p50 ↓ | Latency p99 ↓ | Connections/s ↑ | Peak memory server / client ↓ |
+|---|---|---|---|---|---|---|
+| v0.6.3 | tcp | 10.92 Gbit/s | 68 µs | 104 µs | 12265 | 11.0 / 11.0 MiB |
+| v0.6.3 | noise | 2.94 Gbit/s | 74 µs | 112 µs | 5198 | 42.9 / 34.9 MiB |
+| v0.6.3 | tls | 4.25 Gbit/s | 83 µs | 141 µs | 2053 | 20.8 / 24.9 MiB |
+| v0.6.2 | tcp | 13.30 Gbit/s | 67 µs | 105 µs | 12812 | 11.0 / 11.0 MiB |
+| v0.6.2 | noise | 3.03 Gbit/s | 71 µs | 91 µs | 5736 | 43.0 / 34.2 MiB |
+| v0.6.2 | tls | 4.13 Gbit/s | 84 µs | 142 µs | 2072 | 20.9 / 24.9 MiB |
+| v0.5.0 | tcp | 11.97 Gbit/s | 66 µs | 84 µs | 11982 | 11.9 / 12.0 MiB |
+| v0.5.0 | noise | 3.01 Gbit/s | 73 µs | 103 µs | 4507 | 43.7 / 36.3 MiB |
+| v0.5.0 | tls | 4.35 Gbit/s | 81 µs | 111 µs | 831 | 21.4 / 25.9 MiB |
+| frp v0.71.1 | tcp | 11.10 Gbit/s | 107 µs | 146 µs | 6120 | 51.3 / 45.2 MiB |
+| frp v0.71.1 | tls | 4.08 Gbit/s | 112 µs | 150 µs | 5507 | 50.0 / 66.4 MiB |
+| frp v0.38.0 | tcp | 6.61 Gbit/s | 103 µs | 137 µs | 6946 | 39.8 / 33.5 MiB |
+| frp v0.38.0 | tls | 2.96 Gbit/s | 119 µs | 175 µs | 6282 | 40.2 / 33.9 MiB |
+
+↑ higher is better, ↓ lower is better.
+<!-- /bench:readme -->
+
+<img src="./docs/img/bench-throughput.svg" width="49%"> <img src="./docs/img/bench-latency.svg" width="49%">
+<img src="./docs/img/bench-connections.svg" width="49%"> <img src="./docs/img/bench-memory.svg" width="49%">
+
+Since v0.6.2 the server does TLS handshakes in parallel, so rathole opens more than twice as many TLS connections per second as v0.5.0. rathole has lower latency than frp and uses less memory. frp multiplexes all forwarded connections over one connection, so with TLS it opens new connections faster. Throughput and connection rate vary by up to 20 % between runs.
+
+The table and charts are updated by a workflow after every release. All versions back to v0.5.0, the setup and what each column means are in [Benchmark results](./docs/benchmark-results.md). Locally the benchmark only runs on request:
+
+```shell
+cargo bench --bench tunnel
+```
+
+The original benchmark from 2021 with HTTP load and graphs is on the separate page [Benchmark](./docs/benchmark.md).
 
 **However, don't take it from here that `rathole` can magically make your forwarded service faster several times than before.** The benchmark is done on local loopback, indicating the performance when the task is cpu-bounded. One can gain quite a improvement if the network is not the bottleneck. Unfortunately, that's not true for many users. In that case, the main benefit is lower resource consumption, while the bandwidth and the latency may not improved significantly.
-
-![http_throughput](./docs/img/http_throughput.svg)
-![tcp_bitrate](./docs/img/tcp_bitrate.svg)
-![udp_bitrate](./docs/img/udp_bitrate.svg)
-![mem](./docs/img/mem-graph.png)
 
 ## Planning
 
