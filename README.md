@@ -201,6 +201,7 @@ If the bandwidth is more important, TCP_NODELAY can be opted out with `nodelay =
 
 v0.5.0, the version this fork started from, and the last two releases, compared with [frp](https://github.com/fatedier/frp) v0.38.0 from the original benchmark and the latest frp. Measured on the loopback interface, every value is the median of 3 runs.
 
+<!-- bench:readme -->
 Test machine: VM with 4 vCPUs (Intel, 2.5 GHz) and 8 GB RAM, Linux, Rust 1.99.1.
 
 | Version | Transport | Throughput ↑ | Latency p50 ↓ | Latency p99 ↓ | Connections/s ↑ | Peak memory server / client ↓ |
@@ -220,13 +221,14 @@ Test machine: VM with 4 vCPUs (Intel, 2.5 GHz) and 8 GB RAM, Linux, Rust 1.99.1.
 | frp v0.38.0 | tls | 2.96 Gbit/s | 119 µs | 175 µs | 6282 | 40.2 / 33.9 MiB |
 
 ↑ higher is better, ↓ lower is better.
+<!-- /bench:readme -->
 
 <img src="./docs/img/bench-throughput.svg" width="49%"> <img src="./docs/img/bench-latency.svg" width="49%">
 <img src="./docs/img/bench-connections.svg" width="49%"> <img src="./docs/img/bench-memory.svg" width="49%">
 
-Since the fork, rathole opens about 2.5 times as many TLS connections per second, the other values stayed the same. rathole has lower latency than frp and uses less memory. frp v0.38.0 reached about half the throughput of rathole, the latest frp is on par. frp multiplexes all forwarded connections over one connection, so with TLS it opens new connections faster. Throughput and connection rate vary by up to 20 % between runs.
+Since v0.6.2 the server does TLS handshakes in parallel, so rathole opens more than twice as many TLS connections per second as v0.5.0. rathole has lower latency than frp and uses less memory. frp multiplexes all forwarded connections over one connection, so with TLS it opens new connections faster. Throughput and connection rate vary by up to 20 % between runs.
 
-All versions back to v0.5.0, the setup and what each column means are in [Benchmark results](./docs/benchmark-results.md). The benchmark only runs on request:
+The table and charts are updated by a workflow after every release. All versions back to v0.5.0, the setup and what each column means are in [Benchmark results](./docs/benchmark-results.md). Locally the benchmark only runs on request:
 
 ```shell
 cargo bench --bench tunnel

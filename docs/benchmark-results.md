@@ -4,12 +4,14 @@ Results of the tunnel benchmark (`benches/tunnel.rs`) for every release since v0
 
 ## Setup
 
+<!-- bench:setup -->
 - Date: 2026-10-29
 - Machine: VM with 4 vCPUs (Intel, 2.5 GHz) and 8 GB RAM, Linux
-- rathole: every version built from its tag with Rust 1.99.1, release profile and default features. v0.5.0 and v0.5.2 needed `cargo update -p time` to build with current Rust.
+- rathole: every version built from its tag with Rust 1.99.1, release profile and default features. Tags that no longer build with current Rust get `cargo update -p time` first.
 - frp: v0.38.0 and v0.71.1, the official linux_amd64 releases
 - Command: `FRP_VERSIONS="0.38.0 latest" benches/scripts/compare.sh v0.5.0 v0.5.1 v0.5.2 v0.6.0 v0.6.1 v0.6.2 v0.6.3 -- --rounds 3`. Every value is the median of 3 runs.
 - Load: before each run the benchmark waits until other processes use less than 10 % of the CPUs, and repeats a run if they used more during it. One run was repeated because the machine was busy. In the kept runs other processes used at most 6.1 %.
+<!-- /bench:setup -->
 
 ## What is measured
 
@@ -30,6 +32,7 @@ For frp, `tcp` means `transport.tls.enable = false` and `tls` is frp's default. 
 
 ## Results
 
+<!-- bench:results -->
 | Version | Transport | Throughput ↑ | Latency p50 ↓ | Latency p99 ↓ | Connections/s ↑ | Peak memory server / client ↓ |
 |---|---|---|---|---|---|---|
 | v0.6.3 | tcp | 10.92 Gbit/s | 68 µs | 104 µs | 12265 | 11.0 / 11.0 MiB |
@@ -59,18 +62,18 @@ For frp, `tcp` means `transport.tls.enable = false` and `tls` is frp's default. 
 | frp v0.38.0 | tls | 2.96 Gbit/s | 119 µs | 175 µs | 6282 | 40.2 / 33.9 MiB |
 
 ↑ higher is better, ↓ lower is better.
+<!-- /bench:results -->
 
 ## Notes
 
-- Throughput and connection rate change by up to 20 % between runs on this VM, so the smaller differences between versions there are noise. Latency and memory stay within a few percent.
-- The tls connection rate went up from about 800/s to about 2000/s in v0.6.2. Since then the server does the handshake outside its accept loop, so handshakes run in parallel.
+- Throughput and connection rate change by up to 20 % between runs, so the smaller differences between versions there are noise. Latency and memory stay within a few percent.
+- The tls connection rate more than doubled in v0.6.2. Since then the server does the handshake outside its accept loop, so handshakes run in parallel.
 - rathole opens a new connection to the server for every forwarded connection. frp multiplexes all of them over one connection, so it does not pay for a new TLS handshake each time. That is why frp opens more connections per second with tls, but fewer without encryption.
-- Since the fork (v0.5.0), the tls connection rate went up about 2.5 times. Throughput, latency and memory stayed the same.
-- Compared with frp, rathole has about a third lower latency and uses about a quarter of the memory without encryption. frp v0.38.0 reached about half the throughput of rathole, the latest frp is on par.
+- The results are updated by the Benchmark workflow (`.github/workflows/benchmark.yml`) after every release, which opens a pull request with the new numbers.
 
 ## Compared with 2021
 
-The [original benchmark](benchmark.md) from 2021 measured rathole and frp 0.38 with iperf3 on two Xeon E5-2620. Hardware and tools differ, so the absolute numbers cannot be compared.
+The [original benchmark](benchmark.md) from 2021 measured rathole and frp 0.38 with iperf3 on two Xeon E5-2620. Hardware and tools differ, so the absolute numbers cannot be compared. The 2026 values are from a run on 2026-10-29 on a VM with 4 vCPUs (Intel, 2.5 GHz) and are not updated by the workflow.
 
 | | 2021 rathole | 2021 frp 0.38 | 2026 rathole v0.5.0 | 2026 frp v0.38.0 | 2026 frp v0.71.1 |
 |---|---|---|---|---|---|
@@ -100,4 +103,4 @@ FRP_VERSIONS="0.38.0 latest" benches/scripts/compare.sh v0.5.0 v0.6.2 v0.6.3 -- 
 benches/scripts/charts.py docs/benchmark-results.md docs/img v0.5.0 v0.6.2 v0.6.3 "frp v0.38.0" "frp v0.71.1"
 ```
 
-`compare.sh` needs git, cargo, curl and the GitHub CLI (only to look up the latest frp version). It verifies the frp download against frp's published SHA256 checksums.
+`benches/scripts/update-docs.py` writes a benchmark output into this page and the README, the Benchmark workflow shows how it is called. `compare.sh` needs git, cargo, curl and the GitHub CLI (only to look up the latest frp version). It verifies the frp download against frp's published SHA256 checksums.
