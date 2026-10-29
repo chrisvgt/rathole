@@ -43,7 +43,7 @@ fn get_str_from_keypair_type(curve: KeypairType) -> &'static str {
 fn genkey(curve: Option<KeypairType>) -> Result<()> {
     use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
     let curve = curve.unwrap_or(DEFAULT_CURVE);
-    let builder = snowstorm::Builder::new(
+    let builder = snow::Builder::new(
         format!(
             "Noise_KK_{}_ChaChaPoly_BLAKE2s",
             get_str_from_keypair_type(curve)

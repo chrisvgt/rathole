@@ -286,11 +286,15 @@ async fn forward_udp<T: Transport>(
     tokio::spawn(async move {
         while let Some(t) = outbound_rx.recv().await {
             trace!("outbound {:?}", t);
-            if let Err(e) = t
-                .write(&mut wr)
-                .await
-                .with_context(|| "Failed to forward UDP traffic to the server")
-            {
+            let res = async {
+                t.write(&mut wr).await?;
+                // Encrypting transports may keep the data until the next flush
+                wr.flush().await?;
+                anyhow::Ok(())
+            }
+            .await
+            .with_context(|| "Failed to forward UDP traffic to the server");
+            if let Err(e) = res {
                 debug!("{:?}", e);
                 break;
             }
