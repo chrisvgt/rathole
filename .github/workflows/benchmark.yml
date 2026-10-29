@@ -68,7 +68,9 @@ jobs:
 
       - name: Update the docs
         run: |
-          cpu=$(lscpu | sed -n 's/^Model name: *//p' | head -n 1)
+          # "AMD EPYC 9V74 80-Core Processor" -> "AMD EPYC 9V74"
+          cpu=$(lscpu | sed -n 's/^Model name: *//p' | head -n 1 \
+            | sed -E 's/\((R|TM)\)//g; s/ CPU @.*//; s/ [0-9]+-Core Processor//; s/ Processor//')
           ram=$(awk '/^MemTotal:/ { printf "%.0f", $2 / 1048576 }' /proc/meminfo)
           python3 benches/scripts/update-docs.py \
             --result target/bench-result.md --log target/bench.log \
