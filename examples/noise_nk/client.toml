@@ -1,11 +1,13 @@
 [client]
 remote_addr = "localhost:2333"
-default_token = "123"
+default_token = "use_a_long_random_token" # Same as the server
 
 [client.transport]
 type = "noise"
 [client.transport.noise]
-remote_public_key = "xrpknQcAagcd/b9foMwxSCD+EindWxq450NEONk8XQo="
+# The public key that `rathole --genkey` printed together with the server's
+# private key
+remote_public_key = "generate_with_rathole_--genkey"
 
 [client.services.foo1]
 local_addr = "127.0.0.1:80"

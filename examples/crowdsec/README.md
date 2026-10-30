@@ -8,7 +8,7 @@ ERROR connection{addr=203.0.113.5:51234}: rathole::server: Handshake from 203.0.
 ERROR connection{addr=203.0.113.5:51234}: rathole::server: Handshake from 203.0.113.5 failed: Service app failed the authentication
 ```
 
-These files let [CrowdSec](https://www.crowdsec.net/) ban IPs that fail more than 5 times in a short time. They assume rathole runs as `rathole.service` (see [examples/systemd](../systemd)) and logs to the journal.
+These files let [CrowdSec](https://www.crowdsec.net/) ban IPs that fail more than 5 times in a short time. They assume rathole runs as `rathole.service` and logs to the journal. With the units from [examples/systemd](../systemd) the name is e.g. `ratholes@app1.service`, change it in `acquis.yaml`.
 
 | File | Copy to |
 |---|---|
