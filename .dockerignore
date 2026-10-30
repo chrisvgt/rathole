@@ -1,12 +1,12 @@
-# Directories
-/.git/
-/.github/
-/target/
-/examples/
-/docs/
-/benches/
-
-# Files
-.gitignore
-*.md
-LICENSE
+# Only what `cargo build` and `cargo about` need. rust-toolchain.toml is left
+# out so that the toolchain of the image is used instead of downloading another.
+*
+!Cargo.toml
+!Cargo.lock
+!build.rs
+!src/
+!benches/tunnel.rs
+!LICENSE
+!NOTICE
+!about.hbs
+!about.toml

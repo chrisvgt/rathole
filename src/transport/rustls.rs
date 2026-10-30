@@ -11,7 +11,7 @@ use tokio_rustls::rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer, Server
 
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
-use p12::PFX;
+use p12_keystore::{KeyStore, Pkcs12ImportPolicy};
 use tokio_rustls::rustls::{ClientConfig, RootCertStore, ServerConfig};
 pub(crate) use tokio_rustls::TlsStream;
 use tokio_rustls::{TlsAcceptor, TlsConnector};
@@ -33,24 +33,36 @@ impl Debug for TlsTransport {
     }
 }
 
+/// Reads the private key and its certificate chain, leaf first, from a PKCS#12
+/// archive. The MAC is verified, so a modified archive or a wrong password is
+/// rejected. Archives from OpenSSL 3 (AES) and older (3DES) both work
+fn load_pkcs12(
+    path: &str,
+    password: &str,
+) -> Result<(Vec<CertificateDer<'static>>, PrivatePkcs8KeyDer<'static>)> {
+    let buf = fs::read(path).with_context(|| format!("Failed to read {path}"))?;
+    let store = KeyStore::from_pkcs12(&buf, password, Pkcs12ImportPolicy::Strict)
+        .map_err(|e| anyhow!("Failed to read {path}, check the password: {e}"))?;
+    let (_, chain) = store
+        .private_key_chain()
+        .with_context(|| format!("No private key with its certificate in {path}"))?;
+
+    let certs = chain
+        .certs()
+        .iter()
+        .map(|c| CertificateDer::from(c.as_der().to_vec()))
+        .collect();
+    let key = PrivatePkcs8KeyDer::from(chain.key().as_der().to_vec());
+    Ok((certs, key))
+}
+
 fn load_server_config(config: &TlsConfig) -> Result<Option<ServerConfig>> {
     if let Some(pkcs12_path) = config.pkcs12.as_ref() {
-        let buf = fs::read(pkcs12_path)?;
-        let pfx = PFX::parse(buf.as_slice())?;
         let pass = config
             .pkcs12_password
             .as_ref()
             .with_context(|| "Missing pkcs12_password")?;
-
-        let certs = pfx.cert_bags(pass)?;
-        let keys = pfx.key_bags(pass)?;
-
-        let chain: Vec<CertificateDer> = certs.into_iter().map(CertificateDer::from).collect();
-        let key = PrivatePkcs8KeyDer::from(
-            keys.into_iter()
-                .next()
-                .with_context(|| "No private key found in the pkcs12 file")?,
-        );
+        let (chain, key) = load_pkcs12(pkcs12_path, pass)?;
 
         Ok(Some(
             ServerConfig::builder()
@@ -197,11 +209,52 @@ mod tests {
             trusted_root: Some(path.to_string_lossy().into_owned()),
             pkcs12: None,
             pkcs12_password: None,
+            pkcs12_password_file: None,
         };
         let roots = load_root_certs(&config);
         fs::remove_file(&path)?;
 
         assert_eq!(roots?.len(), 2);
+        Ok(())
+    }
+
+    const PKCS12: &str = "examples/tls/identity.pfx";
+
+    #[test]
+    fn test_load_pkcs12() -> Result<()> {
+        // The example uses 3DES like OpenSSL 1.1 and a SHA-256 MAC
+        let (certs, _) = load_pkcs12(PKCS12, "1234")?;
+        assert_eq!(certs.len(), 2);
+        assert_eq!(
+            certs[0].as_ref(),
+            CertificateDer::from_pem_file("examples/tls/server.crt")?.as_ref()
+        );
+
+        // Written again with AES-256 like OpenSSL 3
+        let store = KeyStore::from_pkcs12(&fs::read(PKCS12)?, "1234", Pkcs12ImportPolicy::Strict)?;
+        let path = std::env::temp_dir().join(format!("rathole-aes-{}.pfx", std::process::id()));
+        fs::write(&path, store.writer("1234").write()?)?;
+        let loaded = load_pkcs12(path.to_str().unwrap(), "1234");
+        fs::remove_file(&path)?;
+        assert_eq!(loaded?.0, certs);
+        Ok(())
+    }
+
+    #[test]
+    fn test_reject_modified_pkcs12() -> Result<()> {
+        assert!(load_pkcs12(PKCS12, "wrong").is_err());
+
+        // Flip one bit in the MAC at the end of the archive
+        let mut buf = fs::read(PKCS12)?;
+        let last = buf.len() - 40;
+        buf[last] ^= 1;
+        let path =
+            std::env::temp_dir().join(format!("rathole-modified-{}.pfx", std::process::id()));
+        fs::write(&path, buf)?;
+        let loaded = load_pkcs12(path.to_str().unwrap(), "1234");
+        fs::remove_file(&path)?;
+        let err = format!("{:#}", loaded.unwrap_err());
+        assert!(err.contains("MAC"), "{}", err);
         Ok(())
     }
 }

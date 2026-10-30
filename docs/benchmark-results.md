@@ -1,6 +1,6 @@
 # Benchmark results
 
-Results of the tunnel benchmark (`benches/tunnel.rs`) for every release since v0.5.0, compared with [frp](https://github.com/fatedier/frp) v0.38.0 from the original benchmark and the latest frp. The [README](../README.md#benchmark) shows v0.5.0, the version this fork started from, and the last two releases. The original benchmark from 2021 is in [benchmark.md](benchmark.md).
+Results of the tunnel benchmark (`benches/tunnel.rs`) for every release since v0.5.0, compared with [frp](https://github.com/fatedier/frp) v0.38.0 from the original benchmark and the latest frp. The [README](../README.md#benchmark) shows v0.5.0, the version this fork started from, and the last two releases. The original benchmark from 2021 is in the [upstream repository](https://github.com/rathole-org/rathole/blob/5a9dd6d939744859af322aeff7fd60f7483a68bc/docs/benchmark.md).
 
 ## Setup
 
@@ -26,7 +26,7 @@ Transports:
 
 - `tcp`: no encryption
 - `noise`: `Noise_NK_25519_ChaChaPoly_BLAKE2s`
-- `tls`: native-tls with the certificate from `examples/tls`
+- `tls`: the default TLS backend of each version, native-tls up to v0.6.4 and rustls since v0.6.5, with the certificate from `examples/tls`
 
 For frp, `tcp` means `transport.tls.enable = false` and `tls` is frp's default. frp has no noise transport.
 
@@ -76,7 +76,7 @@ For frp, `tcp` means `transport.tls.enable = false` and `tls` is frp's default. 
 
 ## Compared with 2021
 
-The [original benchmark](benchmark.md) from 2021 measured rathole and frp 0.38 with iperf3 on two Xeon E5-2620. Hardware and tools differ, so the absolute numbers cannot be compared. The 2026 values are from a run on 2026-10-29 on a VM with 4 vCPUs (Intel, 2.5 GHz) and are not updated by the workflow.
+The [original benchmark](https://github.com/rathole-org/rathole/blob/5a9dd6d939744859af322aeff7fd60f7483a68bc/docs/benchmark.md) from 2021 measured rathole and frp 0.38 with iperf3 on two Xeon E5-2620. Hardware and tools differ, so the absolute numbers cannot be compared. The 2026 values are from a run on 2026-10-29 on a VM with 4 vCPUs (Intel, 2.5 GHz) and are not updated by the workflow.
 
 | | 2021 rathole | 2021 frp 0.38 | 2026 rathole v0.5.0 | 2026 frp v0.38.0 | 2026 frp v0.71.1 |
 |---|---|---|---|---|---|
