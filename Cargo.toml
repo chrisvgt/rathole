@@ -55,8 +55,9 @@ websocket-rustls = [
 # Configuration hot-reload support
 hot-reload = ["notify"]
 
-# Features of the release builds for routers and other embedded devices
-embedded = ["server", "client", "hot-reload", "noise", "rustls"]
+# Features of the release builds for routers and other embedded devices. TLS
+# would make them about 60 % larger, use noise there
+embedded = ["server", "client", "hot-reload", "noise"]
 
 # Feature to enable tokio-console. Disabled by default.
 # Don't enable it unless for debugging purposes.
