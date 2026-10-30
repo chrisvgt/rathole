@@ -16,7 +16,7 @@ pub use constants::UDP_BUFFER_SIZE;
 use anyhow::{bail, Context, Result};
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 #[cfg(feature = "client")]
 mod client;
@@ -68,7 +68,9 @@ pub async fn run(args: Cli, shutdown_rx: broadcast::Receiver<bool>) -> Result<()
     }
 
     // Raise `nofile` limit on linux and mac
-    fdlimit::raise_fd_limit();
+    if let Err(e) = fdlimit::raise_fd_limit() {
+        warn!("Failed to raise the limit of open files: {}", e);
+    }
 
     // Spawn a config watcher. The watcher will send a initial signal to start the instance with a config
     let config_path = args
