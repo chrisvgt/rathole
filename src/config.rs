@@ -966,16 +966,16 @@ mod tests {
             r#"
 [server]
 bind_addr = "0.0.0.0:2333"
-default_token_file = "{default_token}"
+default_token_file = '{default_token}'
 [server.transport]
 type = "noise"
 [server.transport.noise]
-local_private_key_file = "{key}"
+local_private_key_file = '{key}'
 [server.services.a]
 bind_addr = "0.0.0.0:2334"
 [server.services.b]
 bind_addr = "0.0.0.0:2335"
-token_file = "{token}"
+token_file = '{token}'
 "#
         ))?;
         let server = cfg.server.unwrap();
@@ -996,15 +996,16 @@ token_file = "{token}"
                 service
             ))
         };
-        let cfg = client(&format!("token_file = \"{}\"", token))?;
+        let cfg = client(&format!("token_file = '{}'", token))?;
         assert_eq!(
             cfg.client.unwrap().services["a"].token.as_deref(),
             Some("token_from_a_file_0123")
         );
-        // Both, an empty file or a missing file are errors
-        assert!(client(&format!("token = \"x\"\ntoken_file = \"{}\"", token)).is_err());
-        assert!(client(&format!("token_file = \"{}\"", empty)).is_err());
-        assert!(client("token_file = \"/nonexistent/rathole-token\"").is_err());
+        // Both, an empty file or a missing file are errors. Paths are TOML
+        // literal strings, Windows paths contain backslashes
+        assert!(client(&format!("token = \"x\"\ntoken_file = '{}'", token)).is_err());
+        assert!(client(&format!("token_file = '{}'", empty)).is_err());
+        assert!(client("token_file = '/nonexistent/rathole-token'").is_err());
 
         fs::remove_dir_all(&dir)?;
         Ok(())
