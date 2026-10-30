@@ -24,12 +24,13 @@ impl std::fmt::Debug for NoiseTransport {
 }
 
 impl NoiseTransport {
-    fn builder(&self) -> Builder<'_> {
-        let builder = Builder::new(self.params.clone()).local_private_key(&self.local_private_key);
-        match &self.remote_public_key {
-            Some(x) => builder.remote_public_key(x),
+    fn builder(&self) -> Result<Builder<'_>> {
+        let builder =
+            Builder::new(self.params.clone()).local_private_key(&self.local_private_key)?;
+        Ok(match &self.remote_public_key {
+            Some(x) => builder.remote_public_key(x)?,
             None => builder,
-        }
+        })
     }
 }
 
@@ -88,7 +89,7 @@ impl Transport for NoiseTransport {
     }
 
     async fn handshake(&self, conn: Self::RawStream) -> Result<Self::Stream> {
-        let conn = NoiseStream::handshake(conn, self.builder().build_responder()?)
+        let conn = NoiseStream::handshake(conn, self.builder()?.build_responder()?)
             .await
             .with_context(|| "Failed to do noise handshake")?;
         Ok(conn)
@@ -101,7 +102,7 @@ impl Transport for NoiseTransport {
             .await
             .with_context(|| "Failed to connect TCP socket")?;
 
-        let conn = NoiseStream::handshake(conn, self.builder().build_initiator()?)
+        let conn = NoiseStream::handshake(conn, self.builder()?.build_initiator()?)
             .await
             .with_context(|| "Failed to do noise handshake")?;
         return Ok(conn);
