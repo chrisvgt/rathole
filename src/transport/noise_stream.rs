@@ -243,12 +243,38 @@ mod tests {
     fn states() -> anyhow::Result<(HandshakeState, HandshakeState)> {
         let key = Builder::new(PATTERN.parse()?).generate_keypair()?;
         let initiator = Builder::new(PATTERN.parse()?)
-            .remote_public_key(&key.public)
+            .remote_public_key(&key.public)?
             .build_initiator()?;
         let responder = Builder::new(PATTERN.parse()?)
-            .local_private_key(&key.private)
+            .local_private_key(&key.private)?
             .build_responder()?;
         Ok((initiator, responder))
+    }
+
+    /// The same as `states`, but the side of snowstorm uses the snow 0.9 it was
+    /// built with
+    fn mixed_states(
+        snowstorm_is_initiator: bool,
+    ) -> anyhow::Result<(HandshakeState, snowstorm::snow::HandshakeState)> {
+        use snowstorm::snow::Builder as OldBuilder;
+        let key = Builder::new(PATTERN.parse()?).generate_keypair()?;
+        if snowstorm_is_initiator {
+            let theirs = OldBuilder::new(PATTERN.parse()?)
+                .remote_public_key(&key.public)
+                .build_initiator()?;
+            let ours = Builder::new(PATTERN.parse()?)
+                .local_private_key(&key.private)?
+                .build_responder()?;
+            Ok((ours, theirs))
+        } else {
+            let ours = Builder::new(PATTERN.parse()?)
+                .remote_public_key(&key.public)?
+                .build_initiator()?;
+            let theirs = OldBuilder::new(PATTERN.parse()?)
+                .local_private_key(&key.private)
+                .build_responder()?;
+            Ok((ours, theirs))
+        }
     }
 
     async fn pair() -> anyhow::Result<(NoiseStream<DuplexStream>, NoiseStream<DuplexStream>)> {
@@ -341,21 +367,13 @@ mod tests {
     #[tokio::test]
     async fn test_compatible_with_snowstorm() -> anyhow::Result<()> {
         for snowstorm_is_initiator in [true, false] {
-            let (initiator, responder) = states()?;
+            let (our_state, their_state) = mixed_states(snowstorm_is_initiator)?;
             let (a, b) = duplex(1024);
-            let (mut ours, mut theirs) = if snowstorm_is_initiator {
-                let (theirs, ours) = tokio::join!(
-                    snowstorm::NoiseStream::handshake(a, initiator),
-                    NoiseStream::handshake(b, responder)
-                );
-                (ours?, theirs?)
-            } else {
-                let (ours, theirs) = tokio::join!(
-                    NoiseStream::handshake(a, initiator),
-                    snowstorm::NoiseStream::handshake(b, responder)
-                );
-                (ours?, theirs?)
-            };
+            let (ours, theirs) = tokio::join!(
+                NoiseStream::handshake(a, our_state),
+                snowstorm::NoiseStream::handshake(b, their_state)
+            );
+            let (mut ours, mut theirs) = (ours?, theirs?);
 
             let sent = data(200_000);
             let expected = sent.clone();
