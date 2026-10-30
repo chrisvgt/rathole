@@ -196,11 +196,10 @@ dependencies = [
 
 [[package]]
 name = "async-socks5"
-version = "0.5.1"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77f634add2445eb2c1f785642a67ca1073fedd71e73dc3ca69435ef9b9bdedc7"
+checksum = "8da2537846e16b96d2972ee52a3b355663872a1a687ce6d57a3b6f6b6a181c89"
 dependencies = [
- "async-trait",
  "thiserror 1.0.69",
  "tokio",
 ]
