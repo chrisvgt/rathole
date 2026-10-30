@@ -8,7 +8,7 @@
 FROM rust:1.99-trixie AS builder
 WORKDIR /src
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    cargo install --locked cargo-about@0.9.3
+    cargo install --locked --features cli cargo-about@0.9.3
 COPY . .
 ARG FEATURES=default
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
