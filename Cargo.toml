@@ -14,9 +14,9 @@ include = ["src/**/*", "LICENSE", "NOTICE", "README.md", "build.rs"]
 default = [
     "server",
     "client",
-    "native-tls",
+    "rustls",
     "noise",
-    "websocket-native-tls",
+    "websocket-rustls",
     "hot-reload",
 ]
 
@@ -25,12 +25,12 @@ server = []
 # Run as a client
 client = []
 
-# TLS support
+# TLS support. rustls is the default, native-tls uses the OpenSSL of the system
 native-tls = ["tokio-native-tls"]
 rustls = [
     "tokio-rustls",
     "rustls-native-certs",
-    "p12",
+    "p12-keystore",
 ]
 
 # Noise support
@@ -55,9 +55,8 @@ websocket-rustls = [
 # Configuration hot-reload support
 hot-reload = ["notify"]
 
-# Default feature releasing embedded devices
-# Cross-compiling with tls is hard. So we don't :(
-embedded = ["server", "client", "hot-reload", "noise"]
+# Features of the release builds for routers and other embedded devices
+embedded = ["server", "client", "hot-reload", "noise", "rustls"]
 
 # Feature to enable tokio-console. Disabled by default.
 # Don't enable it unless for debugging purposes.
@@ -132,9 +131,14 @@ tokio-util = { version = "0.7.9", optional = true, features = ["io"] }
 futures-core = { version = "0.3.28", optional = true }
 futures-sink = { version = "0.3.28", optional = true }
 tokio-native-tls = { version = "0.3", optional = true }
-tokio-rustls = { version = "0.26", optional = true }
+# ring like noise, aws-lc does not build for every release target
+tokio-rustls = { version = "0.26", optional = true, default-features = false, features = [
+    "logging",
+    "ring",
+    "tls12",
+] }
 rustls-native-certs = { version = "0.8", optional = true }
-p12 = { version = "0.6.3", optional = true }
+p12-keystore = { version = "0.4", optional = true }
 
 [target.'cfg(target_env = "musl")'.dependencies]
 openssl = { version = "0.10", features = ["vendored"], optional = true }
