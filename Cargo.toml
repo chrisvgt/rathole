@@ -111,7 +111,7 @@ rand = "0.10"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 socket2 = { version = "0.6", features = ["all"] }
-fdlimit = "0.2"
+fdlimit = "0.3"
 async-trait = "0.1"
 # ring has assembly for ChaChaPoly and AES-GCM, about twice as fast as the
 # pure Rust ciphers on CPUs without AVX2
