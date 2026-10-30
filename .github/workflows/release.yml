@@ -168,11 +168,15 @@ jobs:
             target/${{ matrix.target }}/release/rathole-${{ matrix.target }}.zip.sha256
           generate_release_notes: true
           body: |
-            **New:** a service can forward a range of up to 100 ports (`bind_addr = "0.0.0.0:7000-7004"`), and `type = "tcp+udp"` forwards both protocols on the same ports. Both sides need 0.6.4 to use this, everything else stays compatible with 0.6.0 and later.
+            **TLS:** rustls is now the default, the release builds no longer need OpenSSL. PKCS#12 files from OpenSSL 3 work without `-legacy`, and a modified file or a wrong password is rejected. Build with the `native-tls` feature for the old behaviour.
 
-            **Faster:** noise uses the assembly ciphers of `ring` and forwarded connections larger buffers, about twice the noise and a third more TLS throughput. A noise connection no longer reserves 192 KiB of buffers up front. No protocol change.
+            **New:** tokens and keys can be read from files with `token_file`, `default_token_file`, `local_private_key_file` and `pkcs12_password_file`, e.g. for Docker secrets or systemd credentials.
 
-            **Security:** a warning for tokens shorter than 16 characters, and failed handshakes are logged as `Handshake from <ip> failed`, with an example for CrowdSec in `examples/crowdsec`.
+            **Fixed:** the config is reloaded when it is a symlink, e.g. a Kubernetes ConfigMap.
 
-            Also: the README now has a benchmark against v0.5.0 and frp, updated after every release.
+            **Docker:** images for amd64 and arm64 at `ghcr.io/chrisvgt/rathole`.
+
+            Also: the systemd units in `examples/systemd` run as their own user with sandboxing, and outdated docs and examples were removed.
+
+            No protocol change, compatible with 0.6.0 and later.
           draft: true
