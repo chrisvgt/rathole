@@ -112,6 +112,7 @@ Here is the full configuration specification:
 [client]
 remote_addr = "example.com:2333" # Necessary. The address of the server
 default_token = "default_token_if_not_specify" # Optional. The default token of services, if they don't define their own ones
+default_token_file = "/run/secrets/rathole_token" # Optional. Read `default_token` from this file instead, see below
 heartbeat_timeout = 40 # Optional. Set to 0 to disable the application-layer heartbeat test. The value must be greater than `server.heartbeat_interval`. Default: 40 seconds
 retry_interval = 1 # Optional. The interval between retry to connect to the server. Default: 1 second
 
@@ -131,6 +132,7 @@ hostname = "example.com" # Optional. The hostname that the client uses to valida
 [client.transport.noise] # Noise protocol. See `docs/transport.md` for further explanation
 pattern = "Noise_NK_25519_ChaChaPoly_BLAKE2s" # Optional. Default value as shown
 local_private_key = "key_encoded_in_base64" # Optional
+local_private_key_file = "/run/secrets/rathole_key" # Optional. Read `local_private_key` from this file instead
 remote_public_key = "key_encoded_in_base64" # Optional
 
 [client.transport.websocket] # Necessary if `type` is "websocket"
@@ -139,6 +141,7 @@ tls = true # If `true` then it will use settings in `client.transport.tls`
 [client.services.service1] # A service that needs forwarding. The name `service1` can change arbitrarily, as long as identical to the name in the server's configuration
 type = "tcp" # Optional. The protocol that needs forwarding. Possible values: ["tcp", "udp", "tcp+udp"]. Default: "tcp"
 token = "whatever" # Necessary if `client.default_token` not set
+token_file = "/run/secrets/service1_token" # Optional. Read `token` from this file instead
 local_addr = "127.0.0.1:1081" # Necessary. The address of the service that needs to be forwarded. Can be a port range, see below
 nodelay = true # Optional. Override the `client.transport.nodelay` per service
 retry_interval = 1 # Optional. The interval between retry to connect to the server. Default: inherits the global config
@@ -162,6 +165,7 @@ keepalive_interval = 8
 [server.transport.tls] # Necessary if `type` is "tls"
 pkcs12 = "identify.pfx" # Necessary. pkcs12 file of server's certificate and private key
 pkcs12_password = "password" # Necessary. Password of the pkcs12 file
+pkcs12_password_file = "/run/secrets/pkcs12_password" # Optional. Read `pkcs12_password` from this file instead
 
 [server.transport.noise] # Same as `[client.transport.noise]`
 pattern = "Noise_NK_25519_ChaChaPoly_BLAKE2s"
@@ -180,6 +184,10 @@ nodelay = true # Optional. Same as the client
 [server.services.service2]
 bind_addr = "0.0.0.1:8082"
 ```
+
+### Secrets in files
+
+Every secret can be read from a file instead: `default_token_file`, `token_file`, `local_private_key_file` and `pkcs12_password_file`. This keeps them out of the config, e.g. with Docker secrets (`/run/secrets/...`) or systemd credentials (`LoadCredential=token:/etc/rathole/token` puts the file at `/run/credentials/<unit>/token`). Whitespace around the secret, such as the final newline, is removed. A setting and its `_file` cannot both be set. The files are read when the config is loaded, so after changing only a secret file restart rathole.
 
 ### Port ranges and TCP+UDP
 
