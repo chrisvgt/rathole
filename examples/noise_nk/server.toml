@@ -1,11 +1,12 @@
 [server]
 bind_addr = "0.0.0.0:2333"
-default_token = "123"
+default_token = "use_a_long_random_token" # e.g. from `openssl rand -base64 32`
 
 [server.transport]
 type = "noise"
 [server.transport.noise]
-local_private_key = "QLYMByBnjgM254zT6YKaBVvuAA61swyZfFxoA/SKZHM="
+# The private key from `rathole --genkey`. Never use a key from the internet.
+local_private_key = "generate_with_rathole_--genkey"
 
 [server.services.foo1]
 bind_addr = "0.0.0.0:5202"
