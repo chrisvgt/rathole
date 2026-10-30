@@ -26,7 +26,7 @@ Transports:
 
 - `tcp`: no encryption
 - `noise`: `Noise_NK_25519_ChaChaPoly_BLAKE2s`
-- `tls`: native-tls with the certificate from `examples/tls`
+- `tls`: the default TLS backend of each version, native-tls up to v0.6.4 and rustls since v0.6.5, with the certificate from `examples/tls`
 
 For frp, `tcp` means `transport.tls.enable = false` and `tls` is frp's default. frp has no noise transport.
 

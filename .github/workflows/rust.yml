@@ -29,8 +29,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
-      - name: Clippy with rustls
-        run: cargo clippy --all-targets --no-default-features --features server,client,rustls,noise,websocket-rustls,hot-reload -- -D warnings
+      - name: Clippy with native-tls
+        run: cargo clippy --all-targets --no-default-features --features server,client,native-tls,noise,websocket-native-tls,hot-reload -- -D warnings
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-about
@@ -74,10 +74,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build
         run: cargo build
-      - name: Run tests with native-tls
-        run: cargo test --verbose
       - name: Run tests with rustls
-        run: cargo test --verbose --no-default-features --features server,client,rustls,noise,websocket-rustls,hot-reload
+        run: cargo test --verbose
+      - name: Run tests with native-tls
+        run: cargo test --verbose --no-default-features --features server,client,native-tls,noise,websocket-native-tls,hot-reload
       - uses: actions/upload-artifact@v7
         with:
           name: rathole-${{ matrix.target }}
