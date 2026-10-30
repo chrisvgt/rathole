@@ -74,6 +74,7 @@ pub struct ClientServiceConfig {
     #[serde(default)] // Default to false
     pub prefer_ipv6: bool,
     pub token: Option<MaskedString>,
+    pub token_file: Option<String>,
     pub nodelay: Option<bool>,
     pub retry_interval: Option<u64>,
 }
@@ -245,6 +246,7 @@ pub struct ServerServiceConfig {
     pub name: String,
     pub bind_addr: String,
     pub token: Option<MaskedString>,
+    pub token_file: Option<String>,
     pub nodelay: Option<bool>,
 }
 
@@ -263,6 +265,7 @@ pub struct TlsConfig {
     pub trusted_root: Option<String>,
     pub pkcs12: Option<String>,
     pub pkcs12_password: Option<MaskedString>,
+    pub pkcs12_password_file: Option<String>,
 }
 
 fn default_noise_pattern() -> String {
@@ -275,6 +278,7 @@ pub struct NoiseConfig {
     #[serde(default = "default_noise_pattern")]
     pub pattern: String,
     pub local_private_key: Option<MaskedString>,
+    pub local_private_key_file: Option<String>,
     pub remote_public_key: Option<String>,
     // TODO: Maybe psk can be added
 }
@@ -345,6 +349,7 @@ fn default_client_retry_interval() -> u64 {
 pub struct ClientConfig {
     pub remote_addr: String,
     pub default_token: Option<MaskedString>,
+    pub default_token_file: Option<String>,
     pub prefer_ipv6: Option<bool>,
     #[serde(deserialize_with = "client_services")]
     pub services: HashMap<String, ClientServiceConfig>,
@@ -365,12 +370,33 @@ fn default_heartbeat_interval() -> u64 {
 pub struct ServerConfig {
     pub bind_addr: String,
     pub default_token: Option<MaskedString>,
+    pub default_token_file: Option<String>,
     #[serde(deserialize_with = "server_services")]
     pub services: HashMap<String, ServerServiceConfig>,
     #[serde(default)]
     pub transport: TransportConfig,
     #[serde(default = "default_heartbeat_interval")]
     pub heartbeat_interval: u64,
+}
+
+/// Reads a secret from `<key>_file` into `<key>`, e.g. from Docker secrets or
+/// systemd credentials. Surrounding whitespace such as the final newline is
+/// removed
+fn read_secret(value: &mut Option<MaskedString>, file: &Option<String>, key: &str) -> Result<()> {
+    let Some(path) = file else {
+        return Ok(());
+    };
+    if value.is_some() {
+        bail!("Set either `{}` or `{}_file`, not both", key, key);
+    }
+    let secret = std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read `{}_file` {}", key, path))?;
+    let secret = secret.trim();
+    if secret.is_empty() {
+        bail!("`{}_file` {} is empty", key, path);
+    }
+    *value = Some(secret.into());
+    Ok(())
 }
 
 /// Names of the services whose token is shorter than `MIN_TOKEN_LEN`, sorted
@@ -429,9 +455,16 @@ impl Config {
     }
 
     fn validate_server_config(server: &mut ServerConfig) -> Result<()> {
+        read_secret(
+            &mut server.default_token,
+            &server.default_token_file,
+            "default_token",
+        )?;
         // Validate services
         for (name, s) in &mut server.services {
             s.name = name.clone();
+            read_secret(&mut s.token, &s.token_file, "token")
+                .with_context(|| format!("service {}", name))?;
             if s.token.is_none() {
                 s.token = server.default_token.clone();
                 if s.token.is_none() {
@@ -458,15 +491,22 @@ impl Config {
             }
         }
 
-        Config::validate_transport_config(&server.transport, true)?;
+        Config::validate_transport_config(&mut server.transport, true)?;
 
         Ok(())
     }
 
     fn validate_client_config(client: &mut ClientConfig) -> Result<()> {
+        read_secret(
+            &mut client.default_token,
+            &client.default_token_file,
+            "default_token",
+        )?;
         // Validate services
         for (name, s) in &mut client.services {
             s.name = name.clone();
+            read_secret(&mut s.token, &s.token_file, "token")
+                .with_context(|| format!("service {}", name))?;
             if s.token.is_none() {
                 s.token = client.default_token.clone();
                 if s.token.is_none() {
@@ -478,7 +518,7 @@ impl Config {
             }
         }
 
-        Config::validate_transport_config(&client.transport, false)?;
+        Config::validate_transport_config(&mut client.transport, false)?;
 
         Ok(())
     }
@@ -518,7 +558,21 @@ impl Config {
         Ok(())
     }
 
-    fn validate_transport_config(config: &TransportConfig, is_server: bool) -> Result<()> {
+    fn validate_transport_config(config: &mut TransportConfig, is_server: bool) -> Result<()> {
+        if let Some(tls) = config.tls.as_mut() {
+            read_secret(
+                &mut tls.pkcs12_password,
+                &tls.pkcs12_password_file,
+                "pkcs12_password",
+            )?;
+        }
+        if let Some(noise) = config.noise.as_mut() {
+            read_secret(
+                &mut noise.local_private_key,
+                &noise.local_private_key_file,
+                "local_private_key",
+            )?;
+        }
         config
             .tcp
             .proxy
@@ -839,6 +893,7 @@ mod tests {
         let mk = |pattern: &str, local: bool, remote: bool| NoiseConfig {
             pattern: pattern.to_string(),
             local_private_key: local.then(|| MaskedString("a2V5".to_string())),
+            local_private_key_file: None,
             remote_public_key: remote.then(|| key.clone().unwrap()),
         };
         let nk = "Noise_NK_25519_ChaChaPoly_BLAKE2s";
@@ -891,5 +946,68 @@ mod tests {
         ];
         let names = weak_tokens(services.iter().map(|(n, t)| (n, t)));
         assert_eq!(names, ["a", "b"]);
+    }
+
+    #[test]
+    fn test_secret_files() -> Result<()> {
+        let dir = std::env::temp_dir().join(format!("rathole-secrets-{}", std::process::id()));
+        fs::create_dir_all(&dir)?;
+        let file = |name: &str, content: &str| -> Result<String> {
+            let path = dir.join(name);
+            fs::write(&path, content)?;
+            Ok(path.to_string_lossy().into_owned())
+        };
+        let default_token = file("default_token", "default_token_from_a_file\n")?;
+        let token = file("token", "  token_from_a_file_0123  \n")?;
+        let key = file("key", "a2V5\n")?;
+        let empty = file("empty", "\n")?;
+
+        let cfg = Config::from_str(&format!(
+            r#"
+[server]
+bind_addr = "0.0.0.0:2333"
+default_token_file = '{default_token}'
+[server.transport]
+type = "noise"
+[server.transport.noise]
+local_private_key_file = '{key}'
+[server.services.a]
+bind_addr = "0.0.0.0:2334"
+[server.services.b]
+bind_addr = "0.0.0.0:2335"
+token_file = '{token}'
+"#
+        ))?;
+        let server = cfg.server.unwrap();
+        assert_eq!(
+            server.services["a"].token.as_deref(),
+            Some("default_token_from_a_file")
+        );
+        assert_eq!(
+            server.services["b"].token.as_deref(),
+            Some("token_from_a_file_0123")
+        );
+        let noise = server.transport.noise.unwrap();
+        assert_eq!(noise.local_private_key.as_deref(), Some("a2V5"));
+
+        let client = |service: &str| {
+            Config::from_str(&format!(
+                "[client]\nremote_addr = \"example.com:2333\"\n[client.services.a]\nlocal_addr = \"127.0.0.1:80\"\n{}",
+                service
+            ))
+        };
+        let cfg = client(&format!("token_file = '{}'", token))?;
+        assert_eq!(
+            cfg.client.unwrap().services["a"].token.as_deref(),
+            Some("token_from_a_file_0123")
+        );
+        // Both, an empty file or a missing file are errors. Paths are TOML
+        // literal strings, Windows paths contain backslashes
+        assert!(client(&format!("token = \"x\"\ntoken_file = '{}'", token)).is_err());
+        assert!(client(&format!("token_file = '{}'", empty)).is_err());
+        assert!(client("token_file = '/nonexistent/rathole-token'").is_err());
+
+        fs::remove_dir_all(&dir)?;
+        Ok(())
     }
 }

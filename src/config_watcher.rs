@@ -9,10 +9,16 @@ use std::{
     path::{Path, PathBuf},
 };
 use tokio::sync::{broadcast, mpsc};
+#[cfg(feature = "notify")]
+use tokio::time;
 use tracing::{error, info, instrument};
 
 #[cfg(feature = "notify")]
 use notify::{EventKind, RecursiveMode, Watcher};
+
+/// Wait after a change before the config is read again
+#[cfg(feature = "notify")]
+const RELOAD_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ConfigChange {
@@ -145,52 +151,58 @@ async fn config_watcher(
     } else {
         env::current_dir()?.join(path)
     };
-    let parent_path = path
-        .parent()
-        .with_context(|| "config file should have a parent dir")?;
-    let path_clone = path.clone();
     let mut watcher =
         notify::recommended_watcher(move |res: Result<notify::Event, _>| match res {
+            // Any change in the watched directories may have replaced the
+            // config, the content decides below. Editors, Ansible and `sed -i`
+            // write a new file and rename it over the old one, Kubernetes swaps
+            // a symlink.
             Ok(e) => {
-                if matches!(e.kind, EventKind::Modify(_))
-                    && e.paths
-                        .iter()
-                        .map(|x| x.file_name())
-                        .any(|x| x == path_clone.file_name())
-                {
-                    let _ = fevent_tx.send(true);
+                if !matches!(e.kind, EventKind::Access(_)) {
+                    let _ = fevent_tx.send(());
                 }
             }
             Err(e) => error!("watch error: {:#}", e),
         })?;
 
-    watcher.watch(parent_path, RecursiveMode::NonRecursive)?;
+    for dir in watch_dirs(&path)? {
+        watcher.watch(&dir, RecursiveMode::NonRecursive)?;
+    }
     info!("Start watching the config");
 
     loop {
         tokio::select! {
           e = fevent_rx.recv() => {
-            match e {
-              Some(_) => {
-                    info!("Rescan the configuration");
-                    let new = match Config::from_file(&path).await.with_context(|| "The changed configuration is invalid. Ignored") {
-                      Ok(v) => v,
-                      Err(e) => {
-                        error!("{:#}", e);
-                        // If the config is invalid, just ignore it
-                        continue;
-                      }
-                    };
-
-                    let events = calculate_events(&old, &new).into_iter().flatten();
-                    for event in events {
-                        event_tx.send(event)?;
-                    }
-
-                    old = new;
-              },
-              None => break
+            if e.is_none() {
+                break;
             }
+            // A save often comes as several events, read the file once they settled
+            time::sleep(RELOAD_DELAY).await;
+            while fevent_rx.try_recv().is_ok() {}
+            // Removed for a moment while an editor saves, the next event follows
+            if !path.exists() {
+                continue;
+            }
+
+            let new = match Config::from_file(&path).await.with_context(|| "The changed configuration is invalid. Ignored") {
+              Ok(v) => v,
+              Err(e) => {
+                error!("{:#}", e);
+                // If the config is invalid, just ignore it
+                continue;
+              }
+            };
+            if new == old {
+                continue;
+            }
+
+            info!("The configuration changed");
+            let events = calculate_events(&old, &new).into_iter().flatten();
+            for event in events {
+                event_tx.send(event)?;
+            }
+
+            old = new;
           },
           _ = shutdown_rx.recv() => break
         }
@@ -199,6 +211,28 @@ async fn config_watcher(
     info!("Config watcher exiting");
 
     Ok(())
+}
+
+/// The directory of the config, and if the config is a symlink also the
+/// directory of the file it points to
+#[cfg(feature = "notify")]
+fn watch_dirs(path: &Path) -> Result<Vec<PathBuf>> {
+    let mut dirs = vec![path
+        .parent()
+        .with_context(|| "config file should have a parent dir")?
+        .to_path_buf()];
+    if let Some(dir) = std::fs::canonicalize(path)
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+    {
+        if !dirs
+            .iter()
+            .any(|d| std::fs::canonicalize(d).ok().as_ref() == Some(&dir))
+        {
+            dirs.push(dir);
+        }
+    }
+    Ok(dirs)
 }
 
 fn calculate_events(old: &Config, new: &Config) -> Option<Vec<ConfigChange>> {
@@ -424,5 +458,118 @@ mod test {
             ),
             None
         );
+    }
+
+    #[cfg(feature = "notify")]
+    mod reload {
+        use super::*;
+        use std::time::Duration;
+
+        const SERVER: &str = "[server]\nbind_addr = \"127.0.0.1:2333\"\n[server.services]\n";
+        const SERVICE: &str = "[server.services.foo]\ntoken = \"0123456789abcdef0123\"\nbind_addr = \"127.0.0.1:2334\"\n";
+
+        fn temp_dir(name: &str) -> PathBuf {
+            let dir = env::temp_dir().join(format!("rathole-{}-{}", name, std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            dir
+        }
+
+        async fn next_change(handle: &mut ConfigWatcherHandle) -> ConfigChange {
+            tokio::time::timeout(Duration::from_secs(5), handle.event_rx.recv())
+                .await
+                .expect("no reload within 5s")
+                .unwrap()
+        }
+
+        async fn expect_added(handle: &mut ConfigWatcherHandle) {
+            match next_change(handle).await {
+                ConfigChange::ServerChange(ServerServiceChange::Add(s)) => {
+                    assert_eq!(s.name, "foo")
+                }
+                c => panic!("unexpected change {:?}", c),
+            }
+        }
+
+        // Editors, Ansible and `sed -i` write a new file and rename it over the config
+        #[tokio::test]
+        async fn replaced_by_rename() {
+            let dir = temp_dir("rename");
+            let path = dir.join("config.toml");
+            std::fs::write(&path, SERVER).unwrap();
+            let (_tx, rx) = broadcast::channel(1);
+            let mut handle = ConfigWatcherHandle::new(&path, rx).await.unwrap();
+            assert!(matches!(
+                next_change(&mut handle).await,
+                ConfigChange::General(_)
+            ));
+            // The watcher starts in its own task
+            tokio::time::sleep(Duration::from_millis(500)).await;
+
+            let tmp = dir.join(".config.toml.tmp");
+            std::fs::write(&tmp, format!("{}{}", SERVER, SERVICE)).unwrap();
+            std::fs::rename(&tmp, &path).unwrap();
+            expect_added(&mut handle).await;
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+
+        // The config is a symlink to a file in another directory
+        #[cfg(unix)]
+        #[tokio::test]
+        async fn symlink_target_changed() {
+            let dir = temp_dir("symlink");
+            std::fs::create_dir(dir.join("target")).unwrap();
+            let target = dir.join("target/config.toml");
+            std::fs::write(&target, SERVER).unwrap();
+            let path = dir.join("config.toml");
+            std::os::unix::fs::symlink(&target, &path).unwrap();
+            let (_tx, rx) = broadcast::channel(1);
+            let mut handle = ConfigWatcherHandle::new(&path, rx).await.unwrap();
+            assert!(matches!(
+                next_change(&mut handle).await,
+                ConfigChange::General(_)
+            ));
+            // The watcher starts in its own task
+            tokio::time::sleep(Duration::from_millis(500)).await;
+
+            std::fs::write(&target, format!("{}{}", SERVER, SERVICE)).unwrap();
+            expect_added(&mut handle).await;
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+
+        // How Kubernetes updates a mounted ConfigMap: config.toml points into
+        // ..data, which is a symlink to a versioned directory that gets swapped
+        #[cfg(unix)]
+        #[tokio::test]
+        async fn kubernetes_configmap() {
+            use std::os::unix::fs::symlink;
+            let dir = temp_dir("configmap");
+            std::fs::create_dir(dir.join("..v1")).unwrap();
+            std::fs::write(dir.join("..v1/config.toml"), SERVER).unwrap();
+            symlink("..v1", dir.join("..data")).unwrap();
+            symlink("..data/config.toml", dir.join("config.toml")).unwrap();
+            let (_tx, rx) = broadcast::channel(1);
+            let mut handle = ConfigWatcherHandle::new(&dir.join("config.toml"), rx)
+                .await
+                .unwrap();
+            assert!(matches!(
+                next_change(&mut handle).await,
+                ConfigChange::General(_)
+            ));
+            // The watcher starts in its own task
+            tokio::time::sleep(Duration::from_millis(500)).await;
+
+            std::fs::create_dir(dir.join("..v2")).unwrap();
+            std::fs::write(
+                dir.join("..v2/config.toml"),
+                format!("{}{}", SERVER, SERVICE),
+            )
+            .unwrap();
+            symlink("..v2", dir.join("..data_tmp")).unwrap();
+            std::fs::rename(dir.join("..data_tmp"), dir.join("..data")).unwrap();
+            std::fs::remove_dir_all(dir.join("..v1")).unwrap();
+            expect_added(&mut handle).await;
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
     }
 }

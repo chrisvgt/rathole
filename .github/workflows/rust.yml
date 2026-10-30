@@ -47,6 +47,17 @@ jobs:
           cargo hack check --feature-powerset --no-dev-deps
           --mutually-exclusive-features default,native-tls,websocket-native-tls,rustls,websocket-rustls
 
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build
+        run: docker build -t rathole:ci .
+      # Fails if a shared library is missing in the runtime image
+      - name: Run
+        run: docker run --rm rathole:ci --version
+
   build:
     name: Build for ${{ matrix.target }}
     runs-on: ${{ matrix.os }}

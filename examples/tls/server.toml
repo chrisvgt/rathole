@@ -5,6 +5,8 @@ default_token = "123"
 [server.transport]
 type = "tls"
 [server.transport.tls]
+# The certificates in this directory are for the tests only, their private
+# keys are public. Create your own with create_self_signed_cert.sh.
 pkcs12 = "examples/tls/identity.pfx"
 pkcs12_password = "1234"
 
