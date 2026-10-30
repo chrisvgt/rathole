@@ -2,8 +2,6 @@
 
 `rathole` focuses on the forwarding for the NAT traversal, rather than being a all-in-one development tool or a load balancer or a gateway. It's designed to *be used with them*, not *replace them*.
 
-But that doesn't mean it's not useful for other purposes. In the future, more configuration APIs will be added and `rathole` can be used with an external dashboard.
-
 > Make each program do one thing well.
 
 - *Domain based forwarding for HTTP*
