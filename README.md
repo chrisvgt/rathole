@@ -1,17 +1,13 @@
 # rathole
 
-![rathole-logo](./docs/img/rathole-logo.png)
-
 [![GitHub stars](https://img.shields.io/github/stars/chrisvgt/rathole)](https://github.com/chrisvgt/rathole/stargazers)
 [![GitHub release](https://img.shields.io/github/v/release/chrisvgt/rathole)](https://github.com/chrisvgt/rathole/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/chrisvgt/rathole/rust.yml?branch=main)](https://github.com/chrisvgt/rathole/actions/workflows/rust.yml)
 [![GitHub downloads](https://img.shields.io/github/downloads/chrisvgt/rathole/total)](https://github.com/chrisvgt/rathole/releases)
 
-[English](README.md) | [简体中文](README-zh.md)
-
 A secure, stable and high-performance reverse proxy for NAT traversal, written in Rust
 
-This is a maintained fork of [rathole-org/rathole](https://github.com/rathole-org/rathole) (Apache-2.0, see [NOTICE](NOTICE)). Dependencies are kept up to date and security issues are fixed. Releases are built from `main`; development happens on `develop`. Note that 0.6.0 changed the wire protocol, so client and server must be updated together.
+rathole was created by [Yujia Qiao](https://github.com/rapiz1) and the rathole contributors. This is a maintained fork of [rathole-org/rathole](https://github.com/rathole-org/rathole) (Apache-2.0, see [NOTICE](NOTICE)). Dependencies are kept up to date and security issues are fixed. Releases are built from `main`; development happens on `develop`. Note that 0.6.0 changed the wire protocol, so client and server must be updated together.
 
 rathole, like [frp](https://github.com/fatedier/frp) and [ngrok](https://github.com/inconshreveable/ngrok), can help to expose the service on the device behind the NAT to the Internet, via a server with a public IP.
 
@@ -21,10 +17,11 @@ rathole, like [frp](https://github.com/fatedier/frp) and [ngrok](https://github.
   - [Features](#features)
   - [Quickstart](#quickstart)
   - [Configuration](#configuration)
+    - [Port ranges and TCP+UDP](#port-ranges-and-tcpudp)
     - [Logging](#logging)
     - [Tuning](#tuning)
   - [Benchmark](#benchmark)
-  - [Planning](#planning)
+  - [Out of scope](#out-of-scope)
 
 <!-- /TOC -->
 
@@ -33,11 +30,11 @@ rathole, like [frp](https://github.com/fatedier/frp) and [ngrok](https://github.
 - **High Performance** Lower latency than frp, and stable when handling a large volume of connections. See [Benchmark](#benchmark)
 - **Low Resource Consumption** Consumes much fewer memory than similar tools. See [Benchmark](#benchmark). [The binary can be](docs/build-guide.md) **as small as ~500KiB** to fit the constraints of devices, like embedded devices as routers.
 - **Security** Tokens of services are mandatory and service-wise. The server and clients are responsible for their own configs. With the optional Noise Protocol, encryption can be configured at ease. No need to create a self-signed certificate! TLS is also supported.
-- **Hot Reload** Services can be added or removed dynamically by hot-reloading the configuration file. HTTP API is WIP.
+- **Hot Reload** Services can be added or removed dynamically by hot-reloading the configuration file.
 
 ## Quickstart
 
-A full-powered `rathole` can be obtained from the [release](https://github.com/rapiz1/rathole/releases) page. Or [build from source](docs/build-guide.md) **for other platforms and minimizing the binary**. A [Docker image](https://hub.docker.com/r/rapiz1/rathole) is also available.
+A full-powered `rathole` can be obtained from the [release](https://github.com/chrisvgt/rathole/releases) page. Or [build from source](docs/build-guide.md) **for other platforms and minimizing the binary**. A [Dockerfile](Dockerfile) is included to build your own image.
 
 The usage of `rathole` is very similar to frp. If you have experience with the latter, then the configuration is very easy for you. The only difference is that configuration of a service is split into the client side and the server side, and a token is mandatory.
 
@@ -256,12 +253,10 @@ The table and charts are updated by a workflow after every release. All versions
 cargo bench --bench tunnel
 ```
 
-The original benchmark from 2021 with HTTP load and graphs is on the separate page [Benchmark](./docs/benchmark.md).
+The original benchmark from 2021 with HTTP load and graphs is in the [upstream repository](https://github.com/rathole-org/rathole/blob/5a9dd6d939744859af322aeff7fd60f7483a68bc/docs/benchmark.md).
 
 **However, don't take it from here that `rathole` can magically make your forwarded service faster several times than before.** The benchmark is done on local loopback, indicating the performance when the task is cpu-bounded. One can gain quite a improvement if the network is not the bottleneck. Unfortunately, that's not true for many users. In that case, the main benefit is lower resource consumption, while the bandwidth and the latency may not improved significantly.
 
-## Planning
-
-- [ ] HTTP APIs for configuration
+## Out of scope
 
 [Out of Scope](./docs/out-of-scope.md) lists features that are not planned to be implemented and why.
