@@ -197,6 +197,7 @@ mod tests {
             trusted_root: Some(path.to_string_lossy().into_owned()),
             pkcs12: None,
             pkcs12_password: None,
+            pkcs12_password_file: None,
         };
         let roots = load_root_certs(&config);
         fs::remove_file(&path)?;
