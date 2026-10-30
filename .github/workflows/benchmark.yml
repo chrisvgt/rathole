@@ -1,0 +1,112 @@
+name: Benchmark
+
+# Benchmarks every release since v0.5.0 against frp when a release tag is
+# pushed and opens a pull request against main with the new README table,
+# charts and docs/benchmark-results.md.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: benchmark
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  benchmark:
+    name: Benchmark
+    # No pre-releases such as v1.0.0-rc.1
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Pick versions
+        id: versions
+        run: |
+          # Releases since v0.5.0, newest first
+          all=$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed '/^v0\.5\.0$/q')
+          newest=$(echo "$all" | head -n 2)
+          {
+            echo "all=$(echo $all)"
+            echo "latest=$(echo "$newest" | head -n 1)"
+            # The README shows the fork base and the last two releases
+            echo "readme=$(echo $newest) v0.5.0"
+            echo "charts=v0.5.0 $(echo $(echo "$newest" | tac))"
+            echo "rust=$(rustc --version | cut -d ' ' -f 2)"
+          } >> "$GITHUB_OUTPUT"
+          # Releases are only built from main
+          latest=$(echo "$newest" | head -n 1)
+          if ! git merge-base --is-ancestor "$latest" HEAD; then
+            echo "::error::$latest is not on main"
+            exit 1
+          fi
+
+      # Tags do not change, so their binaries are only built once per Rust version
+      - uses: actions/cache@v6
+        with:
+          path: target/bench-compare/bin
+          key: bench-${{ steps.versions.outputs.rust }}-${{ steps.versions.outputs.latest }}
+          restore-keys: bench-${{ steps.versions.outputs.rust }}-
+
+      - name: Run the benchmark
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FRP_VERSIONS: latest 0.38.0
+        run: |
+          mkdir -p target
+          benches/scripts/compare.sh ${{ steps.versions.outputs.all }} -- --rounds 3 \
+            > target/bench-result.md 2> >(tee target/bench.log >&2)
+          cat target/bench-result.md
+
+      - name: Update the docs
+        run: |
+          # "AMD EPYC 9V74 80-Core Processor" -> "AMD EPYC 9V74"
+          cpu=$(lscpu | sed -n 's/^Model name: *//p' | head -n 1 \
+            | sed -E 's/\((R|TM)\)//g; s/ CPU @.*//; s/ [0-9]+-Core Processor//; s/ Processor//')
+          ram=$(awk '/^MemTotal:/ { printf "%.0f", $2 / 1048576 }' /proc/meminfo)
+          python3 benches/scripts/update-docs.py \
+            --result target/bench-result.md --log target/bench.log \
+            --machine "GitHub Actions runner with $(nproc) vCPUs ($cpu) and $ram GB RAM, Linux" \
+            --rust ${{ steps.versions.outputs.rust }} \
+            --command 'FRP_VERSIONS="latest 0.38.0" benches/scripts/compare.sh ${{ steps.versions.outputs.all }} -- --rounds 3' \
+            ${{ steps.versions.outputs.readme }}
+          mapfile -t frp < <(grep -o '^| frp v[0-9.]*' target/bench-result.md | cut -c 3- | sort -u -V)
+          python3 benches/scripts/charts.py docs/benchmark-results.md docs/img \
+            ${{ steps.versions.outputs.charts }} "${frp[@]}"
+          git diff --stat
+
+      - name: Open a pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LATEST: ${{ steps.versions.outputs.latest }}
+        run: |
+          branch="bench/$LATEST-$GITHUB_RUN_NUMBER"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add README.md docs/benchmark-results.md docs/img
+          git commit -m "docs: update benchmark results for $LATEST"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "docs: update benchmark results for $LATEST" \
+            --body "Benchmark of all releases since v0.5.0 and frp, run by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
+          # Pull requests opened with the workflow token start no workflows,
+          # so the checks main requires are started by hand
+          gh workflow run rust.yml --ref "$branch"

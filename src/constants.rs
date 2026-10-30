@@ -9,6 +9,10 @@ pub const UDP_TIMEOUT: u64 = 60;
 /// Maximum number of visitors a UDP data channel keeps a local socket for
 pub const UDP_MAX_FORWARDERS: usize = 4096;
 
+/// Buffer for each direction of a forwarded TCP connection. tokio uses 8 KiB.
+/// 16 KiB fills a whole TLS record and lets noise send larger messages
+pub const COPY_BUFFER_SIZE: usize = 16 * 1024;
+
 pub fn listen_backoff() -> ExponentialBackoff {
     ExponentialBackoff {
         max_elapsed_time: None,

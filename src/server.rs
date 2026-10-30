@@ -1,7 +1,7 @@
 use crate::backoff::ExponentialBackoff;
 use crate::config::{Config, ServerConfig, ServerServiceConfig, ServiceType, TransportType};
 use crate::config_watcher::{ConfigChange, ServerServiceChange};
-use crate::constants::{listen_backoff, UDP_BUFFER_SIZE};
+use crate::constants::{listen_backoff, COPY_BUFFER_SIZE, UDP_BUFFER_SIZE};
 use crate::helper::{retry_notify_with_deadline, write_and_flush};
 use crate::multi_map::MultiMap;
 use crate::protocol::Hello::{ControlChannelHello, DataChannelHello};
@@ -16,7 +16,7 @@ use subtle::ConstantTimeEq;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{self, copy_bidirectional, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{self, copy_bidirectional_with_sizes, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{broadcast, mpsc, OwnedSemaphorePermit, RwLock, Semaphore};
 use tokio::time;
@@ -196,8 +196,9 @@ impl<T: 'static + Transport> Server<T> {
                             let control_channels = self.control_channels.clone();
                             let server_config = self.config.clone();
                             tokio::spawn(async move {
+                                // Fixed wording with the bare IP, so fail2ban and CrowdSec can match it
                                 if let Err(err) = handle_connection(transport, conn, services, control_channels, server_config, permit).await {
-                                    error!("{:#}", err);
+                                    error!("Handshake from {} failed: {:#}", addr.ip(), err);
                                 }
                             }.instrument(info_span!("connection", %addr)));
                         }
@@ -328,7 +329,7 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
     let service_config = match service_config {
         Some(v) => v,
         None => {
-            conn.write_all(&protocol::encode(&Ack::AuthFailed)?).await?;
+            write_and_flush(&mut conn, &protocol::encode(&Ack::AuthFailed)?).await?;
             bail!("No such a service {}", hex::encode(service_digest));
         }
     };
@@ -348,7 +349,7 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
     // Validate
     let session_key = protocol::digest(&concat);
     if !bool::from(session_key.ct_eq(&d)) {
-        conn.write_all(&protocol::encode(&Ack::AuthFailed)?).await?;
+        write_and_flush(&mut conn, &protocol::encode(&Ack::AuthFailed)?).await?;
         bail!("Service {} failed the authentication", service_name);
     } else {
         // Send ack
@@ -660,7 +661,13 @@ async fn run_tcp_connection_pool<T: Transport>(
             if let Some(mut ch) = data_ch_rx.recv().await {
                 if write_and_flush(&mut ch, &cmd).await.is_ok() {
                     tokio::spawn(async move {
-                        let _ = copy_bidirectional(&mut ch, &mut visitor).await;
+                        let _ = copy_bidirectional_with_sizes(
+                            &mut ch,
+                            &mut visitor,
+                            COPY_BUFFER_SIZE,
+                            COPY_BUFFER_SIZE,
+                        )
+                        .await;
                     });
                     break;
                 } else {
@@ -717,6 +724,7 @@ async fn run_udp_connection_pool<T: Transport>(
             val = l.recv_from(&mut buf) => {
                 let (n, from) = val?;
                 UdpTraffic::write_slice(&mut conn, from, &buf[..n]).await?;
+                conn.flush().await?;
             },
 
             // Forward outbound traffic from the client to the visitor
