@@ -6,10 +6,10 @@ Results of the tunnel benchmark (`benches/tunnel.rs`) for every release since v0
 
 <!-- bench:setup -->
 - Date: 2026-10-30
-- Machine: GitHub Actions runner with 4 vCPUs (AMD EPYC 7763) and 16 GB RAM, Linux
+- Machine: GitHub Actions runner with 4 vCPUs (Intel Xeon Platinum 8370C) and 16 GB RAM, Linux
 - rathole: every version built from its tag with Rust 1.99.1, release profile and default features. Tags that no longer build with current Rust get `cargo update -p time` first.
 - frp: v0.38.0 and v0.71.1, the official linux_amd64 releases
-- Command: `FRP_VERSIONS="latest 0.38.0" benches/scripts/compare.sh v0.6.4 v0.6.3 v0.6.2 v0.6.1 v0.6.0 v0.5.2 v0.5.1 v0.5.0 -- --rounds 3`. Every value is the median of 3 runs.
+- Command: `FRP_VERSIONS="latest 0.38.0" benches/scripts/compare.sh v0.6.5 v0.6.4 v0.6.3 v0.6.2 v0.6.1 v0.6.0 v0.5.2 v0.5.1 v0.5.0 -- --rounds 3`. Every value is the median of 3 runs.
 - Load: before each run the benchmark waits until other processes use less than 10 % of the CPUs, and repeats a run if they used more during it. No run had to be repeated. In the kept runs other processes used at most 0.0 %.
 <!-- /bench:setup -->
 
@@ -35,34 +35,37 @@ For frp, `tcp` means `transport.tls.enable = false` and `tls` is frp's default. 
 <!-- bench:results -->
 | Version | Transport | Throughput ↑ | Latency p50 ↓ | Latency p99 ↓ | Connections/s ↑ | Peak memory server / client ↓ |
 |---|---|---|---|---|---|---|
-| v0.6.4 | tcp | 10.12 Gbit/s | 122 µs | 170 µs | 6326 | 11.7 / 11.5 MiB |
-| v0.6.4 | noise | 5.30 Gbit/s | 128 µs | 176 µs | 2910 | 15.1 / 15.0 MiB |
-| v0.6.4 | tls | 3.81 Gbit/s | 150 µs | 198 µs | 1123 | 21.5 / 23.8 MiB |
-| v0.6.3 | tcp | 7.23 Gbit/s | 123 µs | 173 µs | 6274 | 10.9 / 10.7 MiB |
-| v0.6.3 | noise | 3.28 Gbit/s | 135 µs | 184 µs | 2699 | 42.5 / 33.7 MiB |
-| v0.6.3 | tls | 4.62 Gbit/s | 147 µs | 200 µs | 1129 | 18.9 / 21.0 MiB |
-| v0.6.2 | tcp | 5.25 Gbit/s | 122 µs | 171 µs | 6301 | 11.0 / 10.9 MiB |
-| v0.6.2 | noise | 3.40 Gbit/s | 136 µs | 184 µs | 2723 | 42.9 / 34.4 MiB |
-| v0.6.2 | tls | 4.71 Gbit/s | 152 µs | 202 µs | 1122 | 18.9 / 20.9 MiB |
-| v0.6.1 | tcp | 4.70 Gbit/s | 122 µs | 170 µs | 6104 | 10.9 / 10.9 MiB |
-| v0.6.1 | noise | 3.40 Gbit/s | 137 µs | 186 µs | 2254 | 42.6 / 34.0 MiB |
-| v0.6.1 | tls | 4.73 Gbit/s | 148 µs | 202 µs | 587 | 18.6 / 21.3 MiB |
-| v0.6.0 | tcp | 4.66 Gbit/s | 121 µs | 171 µs | 6292 | 10.8 / 10.9 MiB |
-| v0.6.0 | noise | 3.38 Gbit/s | 137 µs | 185 µs | 2287 | 42.2 / 33.3 MiB |
-| v0.6.0 | tls | 4.64 Gbit/s | 149 µs | 201 µs | 585 | 18.6 / 21.3 MiB |
-| v0.5.2 | tcp | 4.69 Gbit/s | 123 µs | 172 µs | 6227 | 10.8 / 10.7 MiB |
-| v0.5.2 | noise | 3.38 Gbit/s | 136 µs | 186 µs | 2295 | 42.3 / 34.2 MiB |
-| v0.5.2 | tls | 4.21 Gbit/s | 149 µs | 201 µs | 586 | 18.6 / 21.3 MiB |
-| v0.5.1 | tcp | 4.77 Gbit/s | 122 µs | 171 µs | 6151 | 10.9 / 10.8 MiB |
-| v0.5.1 | noise | 3.45 Gbit/s | 136 µs | 184 µs | 2289 | 42.0 / 34.1 MiB |
-| v0.5.1 | tls | 4.65 Gbit/s | 150 µs | 199 µs | 586 | 18.7 / 21.2 MiB |
-| v0.5.0 | tcp | 7.88 Gbit/s | 122 µs | 172 µs | 6312 | 12.0 / 12.0 MiB |
-| v0.5.0 | noise | 3.18 Gbit/s | 136 µs | 184 µs | 2435 | 43.2 / 34.1 MiB |
-| v0.5.0 | tls | 4.21 Gbit/s | 149 µs | 201 µs | 587 | 19.7 / 22.3 MiB |
-| frp v0.71.1 | tcp | 5.01 Gbit/s | 248 µs | 298 µs | 3288 | 36.0 / 35.5 MiB |
-| frp v0.71.1 | tls | 3.22 Gbit/s | 264 µs | 316 µs | 3091 | 36.4 / 33.8 MiB |
-| frp v0.38.0 | tcp | 2.72 Gbit/s | 243 µs | 293 µs | 3529 | 28.6 / 24.0 MiB |
-| frp v0.38.0 | tls | 2.30 Gbit/s | 263 µs | 319 µs | 3318 | 29.2 / 23.8 MiB |
+| v0.6.5 | tcp | 16.81 Gbit/s | 101 µs | 140 µs | 10298 | 10.8 / 10.6 MiB |
+| v0.6.5 | noise | 7.00 Gbit/s | 103 µs | 138 µs | 3730 | 14.5 / 14.4 MiB |
+| v0.6.5 | tls | 11.62 Gbit/s | 107 µs | 144 µs | 4131 | 14.2 / 14.7 MiB |
+| v0.6.4 | tcp | 16.10 Gbit/s | 102 µs | 133 µs | 10112 | 11.7 / 11.6 MiB |
+| v0.6.4 | noise | 7.06 Gbit/s | 107 µs | 140 µs | 3662 | 15.2 / 15.2 MiB |
+| v0.6.4 | tls | 8.42 Gbit/s | 115 µs | 154 µs | 1355 | 21.6 / 24.2 MiB |
+| v0.6.3 | tcp | 8.54 Gbit/s | 102 µs | 132 µs | 10231 | 11.0 / 11.0 MiB |
+| v0.6.3 | noise | 4.98 Gbit/s | 107 µs | 142 µs | 3358 | 43.1 / 34.2 MiB |
+| v0.6.3 | tls | 7.18 Gbit/s | 113 µs | 152 µs | 1352 | 18.8 / 21.2 MiB |
+| v0.6.2 | tcp | 8.88 Gbit/s | 99 µs | 133 µs | 10189 | 11.0 / 11.0 MiB |
+| v0.6.2 | noise | 5.02 Gbit/s | 107 µs | 145 µs | 3392 | 43.1 / 34.3 MiB |
+| v0.6.2 | tls | 7.10 Gbit/s | 113 µs | 154 µs | 1361 | 18.8 / 21.1 MiB |
+| v0.6.1 | tcp | 7.88 Gbit/s | 101 µs | 137 µs | 10218 | 11.1 / 11.1 MiB |
+| v0.6.1 | noise | 4.93 Gbit/s | 108 µs | 143 µs | 2865 | 43.0 / 34.6 MiB |
+| v0.6.1 | tls | 7.53 Gbit/s | 112 µs | 152 µs | 748 | 18.8 / 21.6 MiB |
+| v0.6.0 | tcp | 8.74 Gbit/s | 99 µs | 136 µs | 10367 | 11.0 / 11.0 MiB |
+| v0.6.0 | noise | 5.04 Gbit/s | 108 µs | 140 µs | 2909 | 42.8 / 34.3 MiB |
+| v0.6.0 | tls | 7.25 Gbit/s | 112 µs | 151 µs | 748 | 18.7 / 21.6 MiB |
+| v0.5.2 | tcp | 8.20 Gbit/s | 101 µs | 140 µs | 10369 | 10.9 / 10.9 MiB |
+| v0.5.2 | noise | 5.01 Gbit/s | 105 µs | 146 µs | 2923 | 42.5 / 34.4 MiB |
+| v0.5.2 | tls | 7.11 Gbit/s | 111 µs | 152 µs | 747 | 18.8 / 21.2 MiB |
+| v0.5.1 | tcp | 9.76 Gbit/s | 99 µs | 130 µs | 10492 | 11.1 / 10.9 MiB |
+| v0.5.1 | noise | 5.02 Gbit/s | 109 µs | 149 µs | 2875 | 42.8 / 34.2 MiB |
+| v0.5.1 | tls | 7.02 Gbit/s | 114 µs | 159 µs | 748 | 18.7 / 21.4 MiB |
+| v0.5.0 | tcp | 8.70 Gbit/s | 98 µs | 150 µs | 10564 | 12.1 / 12.2 MiB |
+| v0.5.0 | noise | 4.55 Gbit/s | 109 µs | 141 µs | 2946 | 43.6 / 35.6 MiB |
+| v0.5.0 | tls | 6.89 Gbit/s | 113 µs | 150 µs | 741 | 19.5 / 22.3 MiB |
+| frp v0.71.1 | tcp | 9.62 Gbit/s | 189 µs | 243 µs | 4804 | 36.1 / 44.1 MiB |
+| frp v0.71.1 | tls | 5.96 Gbit/s | 194 µs | 240 µs | 4495 | 36.7 / 55.4 MiB |
+| frp v0.38.0 | tcp | 4.96 Gbit/s | 183 µs | 227 µs | 5430 | 30.0 / 23.8 MiB |
+| frp v0.38.0 | tls | 3.81 Gbit/s | 193 µs | 242 µs | 4849 | 28.9 / 24.3 MiB |
 
 ↑ higher is better, ↓ lower is better.
 <!-- /bench:results -->
