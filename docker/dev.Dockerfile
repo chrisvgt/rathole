@@ -38,3 +38,7 @@ RUN curl -fsSLo /tmp/gh.deb \
 #    feature is enabled, so it is installed separately.
 RUN cargo install --locked --features cli cargo-about@0.9.3 \
     && cargo install --locked cargo-hack@0.6.46 cargo-zigbuild@0.24.0
+
+# 6. Rust std for the cross-compiled musl targets. cargo-zigbuild links them
+#    with Zig's musl, but still needs the target's prebuilt std from rustup.
+RUN rustup target add aarch64-unknown-linux-musl armv7-unknown-linux-musleabihf

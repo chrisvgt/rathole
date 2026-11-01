@@ -58,7 +58,7 @@ Commands:
   lint                    run clippy, license, and feature checks
   fmt   [--check]         cargo fmt (with -- --check when requested)
   bench [args...]         cargo bench --bench tunnel [args...]
-  release [--target ...]  (Task 5; not yet implemented)
+  release [--target ...]  build release zips in dist/ (all four targets by default)
   image                   build the runtime image rathole:local
   run -- CMD...           run CMD inside the dev container
   shell                   run an interactive sh in the dev container
@@ -106,10 +106,14 @@ _run() {
 	flags=$1
 	shift
 
+	# Docker leaves HOME=/ when the user is a bare UID; point it at the
+	# writable CARGO_HOME volume so Zig/cargo-zigbuild caches (and any other
+	# $HOME/.cache users) have a writable, persistent location.
 	# shellcheck disable=SC2086
 	docker run --rm \
 		--user "$UID_NUM:$GID_NUM" \
 		-e CARGO_HOME=/cargo \
+		-e HOME=/cargo \
 		-e RUSTUP_TOOLCHAIN="$TOOLCHAIN" \
 		-e CARGO_TERM_COLOR \
 		-e CI \
@@ -151,6 +155,74 @@ dev_run_stdin() {
 	_run "$flags" "$@"
 }
 
+# Package one already-built target. UPX is applied best-effort (a size
+# optimization; failure is not fatal). The per-target THIRD-PARTY-LICENSES.txt,
+# the zip, and the checksum are produced inside the container so the host needs
+# only Docker. The target name is the only varying input, passed as $1.
+release_package() {
+	target=$1
+	# The script is single-quoted on purpose: it is passed verbatim to the
+	# container shell, which expands $target, $bin and the $(...) itself.
+	# shellcheck disable=SC2016
+	dev_run sh -c '
+		set -eu
+		target=$1
+		if [ "$target" = x86_64-unknown-linux-gnu ]; then
+			bin=target/release/rathole
+		else
+			bin="target/$target/release/rathole"
+		fi
+		# UPX shrinks the binary but is optional; a failure here is not fatal.
+		upx -q --best --lzma "$bin" || echo "docker.sh release: upx skipped for $target" >&2
+		stage=".release-stage-$target"
+		rm -rf "$stage"
+		mkdir -p "$stage" dist
+		cp "$bin" "$stage/rathole"
+		cp LICENSE NOTICE "$stage/"
+		if [ "$target" = x86_64-unknown-linux-gnu ]; then
+			cargo about generate about.hbs -o "$stage/THIRD-PARTY-LICENSES.txt"
+		else
+			cargo about generate --no-default-features --features embedded about.hbs -o "$stage/THIRD-PARTY-LICENSES.txt"
+		fi
+		( cd "$stage" && zip -q "../dist/rathole-$target.zip" rathole LICENSE NOTICE THIRD-PARTY-LICENSES.txt )
+		hash=$(sha256sum "dist/rathole-$target.zip")
+		printf "%s  %s\n" "${hash%% *}" "rathole-$target.zip" > "dist/rathole-$target.zip.sha256"
+		rm -rf "$stage"
+	' -- "$target"
+}
+
+# Report a failing release target and stop. The cargo/zip output has already
+# been streamed above; naming the target makes the failure unambiguous.
+release_fail() {
+	echo "docker.sh release: target $1 failed during $2; see the output above" >&2
+	exit 1
+}
+
+# Build one release target: run its release-mode test (gnu/musl only), build
+# it, then package it. A failure aborts with the target named.
+release_target() {
+	target=$1
+	echo "docker.sh release: building $target" >&2
+	case "$target" in
+		x86_64-unknown-linux-gnu)
+			dev_run cargo test --release --locked || release_fail "$target" test
+			dev_run cargo build --release --locked || release_fail "$target" build
+			;;
+		x86_64-unknown-linux-musl)
+			dev_run cargo test --release --locked --target "$target" --no-default-features --features embedded || release_fail "$target" test
+			dev_run cargo build --release --locked --target "$target" --no-default-features --features embedded || release_fail "$target" build
+			;;
+		aarch64-unknown-linux-musl | armv7-unknown-linux-musleabihf)
+			dev_run cargo zigbuild --release --locked --target "$target" --no-default-features --features embedded || release_fail "$target" build
+			;;
+		*)
+			echo "docker.sh release: unknown target: $target" >&2
+			exit 2
+			;;
+	esac
+	release_package "$target" || release_fail "$target" package
+}
+
 if [ "$#" -eq 0 ]; then
 	usage
 	exit 2
@@ -188,8 +260,26 @@ bench)
 	dev_run cargo bench --bench tunnel "$@"
 	;;
 release)
-	echo "docker.sh release: not yet implemented (Task 5)" >&2
-	exit 1
+	targets=""
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+			--target)
+				[ "$#" -ge 2 ] || { echo "docker.sh release: --target requires a value" >&2; exit 2; }
+				targets="$targets $2"
+				shift 2
+				;;
+			*)
+				echo "docker.sh release: unexpected argument: $1" >&2
+				exit 2
+				;;
+		esac
+	done
+	if [ -z "$targets" ]; then
+		targets="x86_64-unknown-linux-gnu x86_64-unknown-linux-musl aarch64-unknown-linux-musl armv7-unknown-linux-musleabihf"
+	fi
+	for target in $targets; do
+		release_target "$target"
+	done
 	;;
 image)
 	docker build -f "$ROOT/docker/Dockerfile" -t rathole:local "$ROOT"

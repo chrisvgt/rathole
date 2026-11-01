@@ -12,160 +12,35 @@ env:
 
 jobs:
   release:
-    name: Cross build for ${{ matrix.target }}
-    runs-on: ${{ matrix.os }}
+    name: Release ${{ matrix.target }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            exe: rathole
-            cross: false
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            exe: rathole
-            cross: false
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-musl
-            exe: rathole
-            cross: true
-          - os: ubuntu-latest
-            target: arm-unknown-linux-musleabi
-            exe: rathole
-            cross: true
-          - os: ubuntu-latest
-            target: arm-unknown-linux-musleabihf
-            exe: rathole
-            cross: true
-          - os: ubuntu-latest
-            target: armv7-unknown-linux-musleabihf
-            exe: rathole
-            cross: true
-          - os: ubuntu-latest
-            target: mips-unknown-linux-musl
-            exe: rathole
-            cross: true
-          - os: ubuntu-latest
-            target: mipsel-unknown-linux-musl
-            exe: rathole
-            cross: true
-
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            exe: rathole
-            cross: false
-          
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            exe: rathole
-            cross: false
-
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            exe: rathole.exe
-            cross: false
+        target:
+          - x86_64-unknown-linux-gnu
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
+          - armv7-unknown-linux-musleabihf
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      # Nightly is required to build Rust std for some Tier-3 targets (e.g., mips64*)
-      - uses: dtolnay/rust-toolchain@nightly
-        if: contains(matrix.target, 'mips')
-      
-      - name: Install OpenSSL
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get install pkg-config libssl-dev
-      - name: Install musl tools (Ubuntu)
-        if: matrix.os == 'ubuntu-latest' && contains(matrix.target, 'musl') && matrix.cross == false
-        run: sudo apt-get update && sudo apt-get install -y musl-tools musl-dev pkg-config
-      - name: Install OpenSSL
-        if: matrix.os == 'macos-latest'
-        run: brew install openssl@3
-      
-      # Native build
-      - name: Install target
-        if: matrix.cross == false
-        run: rustup target add ${{ matrix.target }}
-      - name: Run tests (non-musl)
-        if: matrix.cross == false && matrix.target != 'aarch64-apple-darwin' && !contains(matrix.target, 'musl')
-        run: cargo test --release --target ${{ matrix.target }} --verbose
-      - name: Run tests (musl, embedded features)
-        if: matrix.cross == false && contains(matrix.target, 'musl')
-        run: cargo test --release --target ${{ matrix.target }} --verbose --no-default-features --features embedded
-      - name: Build release (non-musl)
-        if: matrix.cross == false && !contains(matrix.target, 'musl')
-        run: cargo build --release --target ${{ matrix.target }}
-      - name: Build release (musl, embedded features)
-        if: matrix.cross == false && contains(matrix.target, 'musl')
-        run: cargo build --release --target ${{ matrix.target }} --no-default-features --features embedded
-
-      # Cross build
-      - name: Install cross
-        if: matrix.cross
-        run: cargo install --version 0.2.5 cross
-      - name: Build release (cross, nightly build-std for mips*)
-        if: matrix.cross && contains(matrix.target, 'mips')
-        run: cross +nightly build -Z build-std=std,panic_abort --release --target ${{ matrix.target }} --no-default-features --features embedded
-      - name: Run tests (cross)
-        if: matrix.cross && !contains(matrix.target, 'mips')
-        run: cross test --release --target ${{ matrix.target }} --verbose --no-default-features --features embedded
-      - name: Build release (cross)
-        if: matrix.cross && !contains(matrix.target, 'mips')
-        run: cross build --release --target ${{ matrix.target }} --no-default-features --features embedded
-
-      - name: Run UPX
-        # Upx may not support some platforms. Ignore the errors
-        continue-on-error: true
-        # Disable upx for mips. See https://github.com/upx/upx/issues/387
-        if: matrix.os == 'ubuntu-latest' && !contains(matrix.target, 'mips')
-        uses: crazy-max/ghaction-upx@v4
-        with:
-          version: v4.0.2
-          files: target/${{ matrix.target }}/release/${{ matrix.exe }}
-          args: -q --best --lzma
+      - name: Build the dev image
+        uses: ./.github/actions/dev-image
+      - name: Build and package
+        run: ./docker.sh release --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v7
         with:
           name: rathole-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/${{ matrix.exe }}
-      # The Apache License requires a copy of the license with every binary,
-      # and the licenses of the crates compiled into it require theirs
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-about
-      - name: Add license files
-        shell: bash
-        run: |
-          cargo about generate about.hbs -o target/${{ matrix.target }}/release/THIRD-PARTY-LICENSES.txt
-          cp LICENSE NOTICE target/${{ matrix.target }}/release/
-      - name: Zip Release
-        uses: TheDoctor0/zip-release@0.7.6
-        with:
-          type: zip
-          filename: rathole-${{ matrix.target }}.zip
-          directory: target/${{ matrix.target }}/release/
-          path: ${{ matrix.exe }} LICENSE NOTICE THIRD-PARTY-LICENSES.txt
-      - name: Checksum
-        shell: bash
-        working-directory: target/${{ matrix.target }}/release
-        env:
-          ZIP: rathole-${{ matrix.target }}.zip
-        run: |
-          if command -v sha256sum >/dev/null; then
-            hash=$(sha256sum "$ZIP")
-          else
-            hash=$(shasum -a 256 "$ZIP")
-          fi
-          # Write the line ourselves, sha256sum on Windows may mark the name with '*'
-          printf '%s  %s\n' "${hash%% *}" "$ZIP" > "$ZIP.sha256"
-          grep -Eq '^[0-9a-f]{64}  rathole-[A-Za-z0-9_.-]+\.zip$' "$ZIP.sha256"
-          cat "$ZIP.sha256"
+          path: |
+            dist/rathole-${{ matrix.target }}.zip
+            dist/rathole-${{ matrix.target }}.zip.sha256
       - name: Publish
         uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            target/${{ matrix.target }}/release/rathole-${{ matrix.target }}.zip
-            target/${{ matrix.target }}/release/rathole-${{ matrix.target }}.zip.sha256
+            dist/rathole-${{ matrix.target }}.zip
+            dist/rathole-${{ matrix.target }}.zip.sha256
           generate_release_notes: true
           body: |
             **TLS:** rustls is now the default, the release builds no longer need OpenSSL. PKCS#12 files from OpenSSL 3 work without `-legacy`, and a modified file or a wrong password is rejected. Build with the `native-tls` feature for the old behaviour.
