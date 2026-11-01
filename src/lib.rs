@@ -30,26 +30,11 @@ use server::run_server;
 
 use crate::config_watcher::{ConfigChange, ConfigWatcherHandle};
 
-const DEFAULT_CURVE: KeypairType = KeypairType::X25519;
-
-fn get_str_from_keypair_type(curve: KeypairType) -> &'static str {
-    match curve {
-        KeypairType::X25519 => "25519",
-        KeypairType::X448 => "448",
-    }
-}
-
 #[cfg(feature = "noise")]
-fn genkey(curve: Option<KeypairType>) -> Result<()> {
+fn genkey(_curve: Option<KeypairType>) -> Result<()> {
     use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-    let curve = curve.unwrap_or(DEFAULT_CURVE);
-    let builder = snow::Builder::new(
-        format!(
-            "Noise_KK_{}_ChaChaPoly_BLAKE2s",
-            get_str_from_keypair_type(curve)
-        )
-        .parse()?,
-    );
+    // snow does not implement Curve448, so x25519 is the only option
+    let builder = snow::Builder::new("Noise_KK_25519_ChaChaPoly_BLAKE2s".parse()?);
     let keypair = builder.generate_keypair()?;
 
     println!("Private Key:\n{}\n", BASE64.encode(keypair.private));
@@ -59,7 +44,7 @@ fn genkey(curve: Option<KeypairType>) -> Result<()> {
 
 #[cfg(not(feature = "noise"))]
 fn genkey(curve: Option<KeypairType>) -> Result<()> {
-    crate::helper::feature_not_compile("nosie")
+    crate::helper::feature_not_compile("noise")
 }
 
 pub async fn run(args: Cli, shutdown_rx: broadcast::Receiver<bool>) -> Result<()> {
