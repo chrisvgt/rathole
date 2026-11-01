@@ -53,8 +53,12 @@ pub async fn run(args: Cli, shutdown_rx: broadcast::Receiver<bool>) -> Result<()
     }
 
     // Raise `nofile` limit on linux and mac
-    if let Err(e) = fdlimit::raise_fd_limit() {
-        warn!("Failed to raise the limit of open files: {}", e);
+    match fdlimit::raise_fd_limit() {
+        Ok(fdlimit::Outcome::LimitRaised { from, to }) => {
+            debug!("Raised the open file limit from {} to {}", from, to)
+        }
+        Ok(fdlimit::Outcome::Unsupported) => {}
+        Err(e) => warn!("Failed to raise the limit of open files: {}", e),
     }
 
     // Spawn a config watcher. The watcher will send a initial signal to start the instance with a config
