@@ -16,6 +16,7 @@ rathole, like [frp](https://github.com/fatedier/frp) and [ngrok](https://github.
 - [rathole](#rathole)
   - [Features](#features)
   - [Quickstart](#quickstart)
+  - [Docker](#docker)
   - [Configuration](#configuration)
     - [Port ranges and TCP+UDP](#port-ranges-and-tcpudp)
     - [Logging](#logging)
@@ -34,7 +35,7 @@ rathole, like [frp](https://github.com/fatedier/frp) and [ngrok](https://github.
 
 ## Quickstart
 
-A full-powered `rathole` can be obtained from the [release](https://github.com/chrisvgt/rathole/releases) page. Or [build from source](docs/build-guide.md) **for other platforms and minimizing the binary**. A [Dockerfile](Dockerfile) is included to build your own image.
+A full-powered `rathole` can be obtained from the [release](https://github.com/chrisvgt/rathole/releases) page, which also includes the [Docker image](#docker). To [build from source](docs/build-guide.md) for other Linux architectures or a smaller binary, see the build guide. Development needs only Docker: run `./docker.sh build`, `./docker.sh test` and the other commands described in the [build guide](docs/build-guide.md). A [Dockerfile](docker/Dockerfile) is included to build your own image.
 
 The usage of `rathole` is very similar to frp. If you have experience with the latter, then the configuration is very easy for you. The only difference is that configuration of a service is split into the client side and the server side, and a token is mandatory.
 
@@ -92,6 +93,22 @@ So you can `ssh myserver.com:5202` to ssh to your NAS.
 To run `rathole` run as a background service on Linux, checkout the [systemd examples](./examples/systemd).
 
 The server port is reachable from the internet. Use a long random token (`openssl rand -base64 32`), consider the Noise `KK` pattern so that only your client can finish the handshake, see [Transport](./docs/transport.md#bidirectional-authentication), and let [CrowdSec](./examples/crowdsec) ban IPs that keep failing the handshake.
+
+## Docker
+
+Images for amd64 and arm64 are published per release at `ghcr.io/chrisvgt/rathole`, tagged with the version (for example `0.6.5`) and `latest`. The image runs as UID 1000, so the mounted config must be readable by that user.
+
+To run the server:
+
+```sh
+docker run -d --network host \
+  -v ./server.toml:/app/config.toml:ro \
+  ghcr.io/chrisvgt/rathole:latest config.toml
+```
+
+`--network host` lets rathole bind the ports from the config; on Docker Desktop, publish those ports with `-p` instead. Use the same command with `client.toml` on the client side.
+
+To build the image yourself, `./docker.sh image` creates `rathole:local` from [docker/Dockerfile](docker/Dockerfile).
 
 ## Configuration
 
@@ -258,7 +275,7 @@ Since v0.6.2 the server does TLS handshakes in parallel, so rathole opens more t
 The table and charts are updated by a workflow after every release. All versions back to v0.5.0, the setup and what each column means are in [Benchmark results](./docs/benchmark-results.md). Locally the benchmark only runs on request:
 
 ```shell
-cargo bench --bench tunnel
+./docker.sh bench
 ```
 
 The original benchmark from 2021 with HTTP load and graphs is in the [upstream repository](https://github.com/rathole-org/rathole/blob/5a9dd6d939744859af322aeff7fd60f7483a68bc/docs/benchmark.md).
