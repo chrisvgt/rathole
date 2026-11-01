@@ -1,5 +1,5 @@
 name: Build the rathole dev image
-description: Builds docker/dev.Dockerfile once with Buildx and exposes it as RATHOLE_DEV_IMAGE for docker.sh.
+description: Builds docker/dev.Dockerfile per job (layer-cached via the GitHub Actions cache) with Buildx and exposes it as RATHOLE_DEV_IMAGE for docker.sh.
 runs:
   using: composite
   steps:
