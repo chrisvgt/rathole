@@ -83,7 +83,7 @@ TOOLCHAIN=
 resolve_toolchain() {
 	[ -n "$TOOLCHAIN" ] && return
 	TOOLCHAIN=$(docker image inspect "$IMAGE" --format '{{range .Config.Env}}{{println .}}{{end}}' |
-		sed -n 's/^RUST_VERSION=//p')
+		awk -F= '$1=="RUST_VERSION" {print $2}')
 	TOOLCHAIN=${TOOLCHAIN:-stable}
 }
 
@@ -106,19 +106,20 @@ _run() {
 	flags=$1
 	shift
 
-	env_args=""
-	for var in CARGO_TERM_COLOR CI GITHUB_ACTIONS GITHUB_REF GH_TOKEN GITHUB_TOKEN FRP_VERSIONS RUST_LOG RUST_BACKTRACE; do
-		if val=$(printenv "$var" 2>/dev/null) && [ -n "$val" ]; then
-			env_args="$env_args -e $var"
-		fi
-	done
-
 	# shellcheck disable=SC2086
 	docker run --rm \
 		--user "$UID_NUM:$GID_NUM" \
 		-e CARGO_HOME=/cargo \
 		-e RUSTUP_TOOLCHAIN="$TOOLCHAIN" \
-		$env_args \
+		-e CARGO_TERM_COLOR \
+		-e CI \
+		-e GITHUB_ACTIONS \
+		-e GITHUB_REF \
+		-e GH_TOKEN \
+		-e GITHUB_TOKEN \
+		-e FRP_VERSIONS \
+		-e RUST_LOG \
+		-e RUST_BACKTRACE \
 		-v "$ROOT:$ROOT" \
 		-w "$ROOT" \
 		-v "$CARGO_HOME_VOLUME:/cargo" \
