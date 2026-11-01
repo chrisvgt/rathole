@@ -555,6 +555,20 @@ impl Config {
         {
             bail!("The KK pattern requires both `noise.local_private_key` and `noise.remote_public_key`");
         }
+
+        #[cfg(feature = "noise")]
+        {
+            crate::transport::parse_noise_params(&config.pattern)?;
+            for (field, value) in [
+                ("local_private_key", config.local_private_key.as_deref()),
+                ("remote_public_key", config.remote_public_key.as_deref()),
+            ] {
+                if let Some(value) = value {
+                    crate::transport::decode_noise_key(value, field)?;
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -889,10 +903,11 @@ mod tests {
 
     #[test]
     fn test_noise_pattern_validation() {
-        let key = Some("a2V5".to_string());
+        let key = Some("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=".to_string());
         let mk = |pattern: &str, local: bool, remote: bool| NoiseConfig {
             pattern: pattern.to_string(),
-            local_private_key: local.then(|| MaskedString("a2V5".to_string())),
+            local_private_key: local
+                .then(|| MaskedString("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=".to_string())),
             local_private_key_file: None,
             remote_public_key: remote.then(|| key.clone().unwrap()),
         };
@@ -933,6 +948,40 @@ mod tests {
         .is_ok());
     }
 
+    #[cfg(feature = "noise")]
+    #[test]
+    fn test_noise_key_validation() {
+        use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+        let server = |noise: &str| {
+            Config::from_str(&format!(
+                r#"
+[server]
+bind_addr = "0.0.0.0:2333"
+default_token = "0123456789abcdef0123456789abcdef"
+[server.transport]
+type = "noise"
+[server.transport.noise]
+{noise}
+[server.services.a]
+bind_addr = "0.0.0.0:2334"
+"#
+            ))
+        };
+        let k32 = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=";
+        let k64 = B64.encode([1u8; 64]);
+        assert!(server(&format!("local_private_key = \"{k32}\"")).is_ok());
+        assert!(server("local_private_key = \"a2V5\"").is_err());
+        assert!(server(&format!(
+            "pattern = \"Noise_NK_448_ChaChaPoly_BLAKE2s\"\nlocal_private_key = \"{k32}\""
+        ))
+        .is_err());
+        // KK: the server also validates the client's public key
+        assert!(server(&format!(
+            "pattern = \"Noise_KK_25519_ChaChaPoly_BLAKE2s\"\nlocal_private_key = \"{k32}\"\nremote_public_key = \"{k64}\""
+        ))
+        .is_err());
+    }
+
     #[test]
     fn test_weak_tokens() {
         let services = [
@@ -959,7 +1008,7 @@ mod tests {
         };
         let default_token = file("default_token", "default_token_from_a_file\n")?;
         let token = file("token", "  token_from_a_file_0123  \n")?;
-        let key = file("key", "a2V5\n")?;
+        let key = file("key", "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=\r\n")?;
         let empty = file("empty", "\n")?;
 
         let cfg = Config::from_str(&format!(
@@ -988,7 +1037,10 @@ token_file = '{token}'
             Some("token_from_a_file_0123")
         );
         let noise = server.transport.noise.unwrap();
-        assert_eq!(noise.local_private_key.as_deref(), Some("a2V5"));
+        assert_eq!(
+            noise.local_private_key.as_deref(),
+            Some("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=")
+        );
 
         let client = |service: &str| {
             Config::from_str(&format!(

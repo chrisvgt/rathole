@@ -90,6 +90,8 @@ mod noise;
 #[cfg(feature = "noise")]
 pub use noise::NoiseTransport;
 #[cfg(feature = "noise")]
+pub(crate) use noise::{decode_noise_key, parse_noise_params};
+#[cfg(feature = "noise")]
 mod noise_stream;
 
 #[cfg(any(feature = "websocket-native-tls", feature = "websocket-rustls"))]
