@@ -1,3 +1,5 @@
 /target
 perf.data
 perf.data.old
+/dist/
+.docker-cargo-home-uid

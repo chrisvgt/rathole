@@ -18,9 +18,9 @@ updates:
           - "minor"
           - "patch"
 
-  # Maintain the base images in the Dockerfile
+  # Maintain the base images in the Dockerfiles
   - package-ecosystem: "docker"
-    directory: "/"
+    directory: "docker"
     target-branch: "develop"
     schedule:
       interval: "weekly"
