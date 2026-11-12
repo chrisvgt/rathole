@@ -1,22 +1,25 @@
 use crate::backoff::ExponentialBackoff;
-use crate::config::{Config, ServerConfig, ServerServiceConfig, ServiceType, TransportType};
+use crate::config::{
+    Config, ServerConfig, ServerServiceConfig, ServiceMode, ServiceType, TransportType,
+};
 use crate::config_watcher::{ConfigChange, ServerServiceChange};
-use crate::constants::{listen_backoff, COPY_BUFFER_SIZE, UDP_BUFFER_SIZE};
+use crate::constants::{listen_backoff, COPY_BUFFER_SIZE, UDP_MAX_FORWARDERS};
 use crate::helper::{retry_notify_with_deadline, write_and_flush};
 use crate::multi_map::MultiMap;
-use crate::protocol::Hello::{ControlChannelHello, DataChannelHello};
+use crate::protocol::Hello::{ControlChannelHello, DataChannelHello, VisitorHello};
 use crate::protocol::{
-    self, read_auth, read_hello, Ack, ControlChannelCmd, DataChannelCmd, Hello, UdpTraffic,
+    self, read_auth, read_data_cmd, read_hello, Ack, ControlChannelCmd, DataChannelCmd, Hello,
     HASH_WIDTH_IN_BYTES,
 };
 use crate::transport::{SocketOpts, TcpTransport, Transport};
+use crate::udp::{forward_udp, serve_udp_socket};
 use anyhow::{anyhow, bail, Context, Result};
 use subtle::ConstantTimeEq;
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{self, copy_bidirectional_with_sizes, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{self, copy_bidirectional_with_sizes, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{broadcast, mpsc, OwnedSemaphorePermit, RwLock, Semaphore};
 use tokio::time;
@@ -92,6 +95,9 @@ pub async fn run_server(
 // See also MultiMap
 type ControlChannelMap<T> = MultiMap<ServiceDigest, Nonce, ControlChannelHandle<T>>;
 
+// Stops the visitors of a reverse service once the service is changed or removed
+type ReverseSessions = Arc<RwLock<HashMap<ServiceDigest, broadcast::Sender<bool>>>>;
+
 // Server holds all states of running a server
 struct Server<T: Transport> {
     // `[server]` config
@@ -101,6 +107,8 @@ struct Server<T: Transport> {
     services: Arc<RwLock<HashMap<ServiceDigest, ServerServiceConfig>>>,
     // Collection of contorl channels
     control_channels: Arc<RwLock<ControlChannelMap<T>>>,
+    // Running visitors of reverse services
+    reverse_sessions: ReverseSessions,
     // Wrapper around the transport layer
     transport: Arc<T>,
 }
@@ -127,6 +135,7 @@ impl<T: 'static + Transport> Server<T> {
             config,
             services,
             control_channels,
+            reverse_sessions: Default::default(),
             transport,
         })
     }
@@ -195,9 +204,11 @@ impl<T: 'static + Transport> Server<T> {
                             let services = self.services.clone();
                             let control_channels = self.control_channels.clone();
                             let server_config = self.config.clone();
+                            let reverse_sessions = self.reverse_sessions.clone();
+                            let shutdown_rx = shutdown_rx.resubscribe();
                             tokio::spawn(async move {
                                 // Fixed wording with the bare IP, so fail2ban and CrowdSec can match it
-                                if let Err(err) = handle_connection(transport, conn, services, control_channels, server_config, permit).await {
+                                if let Err(err) = handle_connection(transport, conn, services, control_channels, reverse_sessions, server_config, shutdown_rx, permit).await {
                                     error!("Handshake from {} failed: {:#}", addr.ip(), err);
                                 }
                             }.instrument(info_span!("connection", %addr)));
@@ -232,10 +243,14 @@ impl<T: 'static + Transport> Server<T> {
 
                     let mut wg = self.control_channels.write().await;
                     let _ = wg.remove1(&hash);
+
+                    // Visitors that were authenticated for the old config end
+                    let _ = self.reverse_sessions.write().await.remove(&hash);
                 }
                 ServerServiceChange::Delete(s) => {
                     let hash = protocol::digest(s.as_bytes());
                     let _ = self.services.write().await.remove(&hash);
+                    let _ = self.reverse_sessions.write().await.remove(&hash);
 
                     let mut wg = self.control_channels.write().await;
                     let _ = wg.remove1(&hash);
@@ -247,13 +262,16 @@ impl<T: 'static + Transport> Server<T> {
 }
 
 // Handle connections to `server.bind_addr`
+#[allow(clippy::too_many_arguments)]
 async fn handle_connection<T: 'static + Transport>(
     transport: Arc<T>,
     conn: T::RawStream,
     services: Arc<RwLock<HashMap<ServiceDigest, ServerServiceConfig>>>,
     control_channels: Arc<RwLock<ControlChannelMap<T>>>,
+    reverse_sessions: ReverseSessions,
     server_config: Arc<ServerConfig>,
-    _permit: OwnedSemaphorePermit,
+    mut shutdown_rx: broadcast::Receiver<bool>,
+    permit: OwnedSemaphorePermit,
 ) -> Result<()> {
     // Do transport handshake with a timeout
     let mut conn = time::timeout(
@@ -284,6 +302,31 @@ async fn handle_connection<T: 'static + Transport>(
         }
         DataChannelHello(_, nonce) => {
             do_data_channel_handshake(conn, control_channels, nonce).await?;
+        }
+        VisitorHello(_, service_digest) => {
+            let (conn, service, cmd) =
+                do_visitor_handshake::<T>(conn, services, service_digest).await?;
+            // The visitor is authenticated and forwarding can run for a long
+            // time, so it no longer counts as a pending handshake
+            drop(permit);
+
+            // Ends with the server, and with the service when it is changed or removed
+            let mut service_rx = reverse_sessions
+                .write()
+                .await
+                .entry(service_digest)
+                .or_insert_with(|| broadcast::channel(1).0)
+                .subscribe();
+            tokio::select! {
+                // Not part of the handshake, so it is not logged as a failed one
+                ret = run_visitor_forward::<T>(conn, &service, cmd) => {
+                    if let Err(err) = ret {
+                        warn!(service = %service.name, "Reverse service failed: {:#}", err);
+                    }
+                }
+                _ = shutdown_rx.recv() => {}
+                _ = service_rx.recv() => {}
+            }
         }
     }
     Ok(())
@@ -325,10 +368,12 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
             .with_context(|| "Timeout reading auth")??;
 
     // An unknown service gets the same answer as a wrong token,
-    // so a peer without a token cannot probe which services exist
+    // so a peer without a token cannot probe which services exist.
+    // A reverse service cannot create a forward listener either: it is
+    // answered the same way, so its token cannot be used for the wrong job
     let service_config = match service_config {
-        Some(v) => v,
-        None => {
+        Some(v) if v.mode == ServiceMode::Forward => v,
+        _ => {
             write_and_flush(&mut conn, &protocol::encode(&Ack::AuthFailed)?).await?;
             bail!("No such a service {}", hex::encode(service_digest));
         }
@@ -378,6 +423,125 @@ async fn do_control_channel_handshake<T: 'static + Transport>(
     }
 
     Ok(())
+}
+
+/// Handshake of a visitor of a reverse service. It is the same exchange as
+/// for a control channel: the server sends a fresh nonce and the client
+/// proves it knows the token by sending `sha256(token || nonce)`. Unknown
+/// services and services that are not reverse are answered like a wrong token.
+/// Returns the authenticated stream, the service and what the client asked for
+async fn do_visitor_handshake<T: 'static + Transport>(
+    mut conn: T::Stream,
+    services: Arc<RwLock<HashMap<ServiceDigest, ServerServiceConfig>>>,
+    service_digest: ServiceDigest,
+) -> Result<(T::Stream, ServerServiceConfig, DataChannelCmd)> {
+    info!("Try to handshake a visitor");
+
+    T::hint(&conn, SocketOpts::for_control_channel());
+
+    // Generate a nonce
+    let mut nonce = vec![0u8; HASH_WIDTH_IN_BYTES];
+    rand::fill(&mut nonce[..]);
+
+    // Send hello
+    let hello_send = Hello::VisitorHello(
+        protocol::CURRENT_PROTO_VERSION,
+        nonce
+            .clone()
+            .try_into()
+            .map_err(|_| anyhow!("Invalid nonce length"))?,
+    );
+    conn.write_all(&protocol::encode(&hello_send)?).await?;
+    conn.flush().await?;
+
+    // Lookup the service. The lock is not held across network I/O
+    let service_config = services.read().await.get(&service_digest).cloned();
+
+    // Read auth
+    let protocol::Auth(d) =
+        time::timeout(Duration::from_secs(HANDSHAKE_TIMEOUT), read_auth(&mut conn))
+            .await
+            .with_context(|| "Timeout reading auth")??;
+
+    let service_config = match service_config {
+        Some(v) if v.mode == ServiceMode::Reverse => v,
+        _ => {
+            write_and_flush(&mut conn, &protocol::encode(&Ack::AuthFailed)?).await?;
+            bail!("No such a service {}", hex::encode(service_digest));
+        }
+    };
+
+    // Calculate the checksum
+    let mut concat = Vec::from(
+        service_config
+            .token
+            .as_ref()
+            .with_context(|| "Missing token")?
+            .as_bytes(),
+    );
+    concat.append(&mut nonce);
+
+    // Validate
+    if !bool::from(protocol::digest(&concat).ct_eq(&d)) {
+        write_and_flush(&mut conn, &protocol::encode(&Ack::AuthFailed)?).await?;
+        bail!("Service {} failed the authentication", service_config.name);
+    }
+
+    write_and_flush(&mut conn, &protocol::encode(&Ack::Ok)?).await?;
+
+    T::hint(&conn, SocketOpts::from_server_cfg(&service_config));
+
+    // The client says whether it brings TCP or UDP traffic
+    let cmd = time::timeout(
+        Duration::from_secs(HANDSHAKE_TIMEOUT),
+        read_data_cmd(&mut conn),
+    )
+    .await
+    .with_context(|| "Timeout reading the command")??;
+
+    Ok((conn, service_config, cmd))
+}
+
+/// Connects an authenticated visitor to the local service of a reverse
+/// service. The target is always the configured `local_addr`, the client
+/// cannot choose it
+async fn run_visitor_forward<T: Transport>(
+    mut conn: T::Stream,
+    service: &ServerServiceConfig,
+    cmd: DataChannelCmd,
+) -> Result<()> {
+    let local_addr = service
+        .local_addr
+        .as_deref()
+        .with_context(|| "Missing local_addr")?;
+
+    match (cmd, service.service_type) {
+        (DataChannelCmd::StartForwardTcp, ServiceType::Tcp) => {
+            debug!("Visitor starts forwarding to {}", local_addr);
+            let mut local = TcpStream::connect(local_addr)
+                .await
+                .with_context(|| format!("Failed to connect to {}", local_addr))?;
+            let _ = copy_bidirectional_with_sizes(
+                &mut conn,
+                &mut local,
+                COPY_BUFFER_SIZE,
+                COPY_BUFFER_SIZE,
+            )
+            .await;
+            Ok(())
+        }
+        (DataChannelCmd::StartForwardUdp, ServiceType::Udp) => {
+            debug!("Visitor starts forwarding to {}", local_addr);
+            forward_udp(conn, local_addr, false, UDP_MAX_FORWARDERS).await
+        }
+        (cmd, service_type) => {
+            bail!(
+                "The visitor asked for {:?}, but the service is {:?}. Please check the configuration",
+                cmd,
+                service_type
+            )
+        }
+    }
 }
 
 async fn do_data_channel_handshake<T: 'static + Transport>(
@@ -450,7 +614,8 @@ where
         }
 
         let shutdown_rx_clone = shutdown_tx.subscribe();
-        let bind_addr = service.bind_addr.clone();
+        // Only forward services have a control channel, so there is a bind_addr
+        let bind_addr = service.bind_addr.clone().unwrap_or_default();
         match service.service_type {
             ServiceType::Tcp => tokio::spawn(
                 async move {
@@ -717,26 +882,9 @@ async fn run_udp_connection_pool<T: Transport>(
         .ok_or_else(|| anyhow!("No available data channels"))?;
     write_and_flush(&mut conn, &cmd).await?;
 
-    let mut buf = [0u8; UDP_BUFFER_SIZE];
-    loop {
-        tokio::select! {
-            // Forward inbound traffic to the client
-            val = l.recv_from(&mut buf) => {
-                let (n, from) = val?;
-                UdpTraffic::write_slice(&mut conn, from, &buf[..n]).await?;
-                conn.flush().await?;
-            },
-
-            // Forward outbound traffic from the client to the visitor
-            hdr_len = conn.read_u8() => {
-                let t = UdpTraffic::read(&mut conn, hdr_len?).await?;
-                l.send_to(&t.data, t.from).await?;
-            }
-
-            _ = shutdown_rx.recv() => {
-                break;
-            }
-        }
+    tokio::select! {
+        ret = serve_udp_socket(&l, &mut conn) => ret?,
+        _ = shutdown_rx.recv() => {}
     }
 
     debug!("UDP pool dropped");
@@ -748,6 +896,8 @@ async fn run_udp_connection_pool<T: Transport>(
 mod tests {
     use super::*;
     use crate::protocol::{read_ack, Auth};
+
+    const TOKEN: &str = "0123456789abcdef0123456789abcdef";
 
     #[tokio::test]
     async fn test_unknown_service_looks_like_wrong_token() -> Result<()> {
@@ -769,6 +919,123 @@ mod tests {
             .await?;
         assert!(matches!(read_ack(&mut client).await?, Ack::AuthFailed));
         assert!(server.await?.is_err());
+        Ok(())
+    }
+
+    fn service(name: &str, mode: ServiceMode) -> ServerServiceConfig {
+        ServerServiceConfig {
+            name: name.to_string(),
+            mode,
+            token: Some(TOKEN.into()),
+            ..Default::default()
+        }
+    }
+
+    fn services(
+        list: &[(&str, ServiceMode)],
+    ) -> Arc<RwLock<HashMap<ServiceDigest, ServerServiceConfig>>> {
+        Arc::new(RwLock::new(
+            list.iter()
+                .map(|(name, mode)| (protocol::digest(name.as_bytes()), service(name, *mode)))
+                .collect(),
+        ))
+    }
+
+    /// Runs the server half of the visitor handshake and answers it as a
+    /// client that sends `Auth(digest(token || nonce))`
+    async fn visitor(
+        name: &str,
+        token: &str,
+        list: &[(&str, ServiceMode)],
+    ) -> Result<(Ack, Result<DataChannelCmd>)> {
+        let l = TcpListener::bind("127.0.0.1:0").await?;
+        let mut client = TcpStream::connect(l.local_addr()?).await?;
+        let (conn, _) = l.accept().await?;
+
+        let services = services(list);
+        let digest = protocol::digest(name.as_bytes());
+        let server = tokio::spawn(async move {
+            do_visitor_handshake::<TcpTransport>(conn, services, digest)
+                .await
+                .map(|(_, _, cmd)| cmd)
+        });
+
+        let Hello::VisitorHello(_, nonce) = read_hello(&mut client).await? else {
+            bail!("Unexpected hello");
+        };
+        let mut concat = Vec::from(token.as_bytes());
+        concat.extend_from_slice(&nonce);
+        client
+            .write_all(&protocol::encode(&Auth(protocol::digest(&concat)))?)
+            .await?;
+        let ack = read_ack(&mut client).await?;
+        if matches!(ack, Ack::Ok) {
+            client
+                .write_all(&protocol::encode(&DataChannelCmd::StartForwardTcp)?)
+                .await?;
+        }
+        Ok((ack, server.await?))
+    }
+
+    #[tokio::test]
+    async fn test_visitor_handshake_accepts_the_token() -> Result<()> {
+        let (ack, ret) = visitor("a", TOKEN, &[("a", ServiceMode::Reverse)]).await?;
+        assert!(matches!(ack, Ack::Ok));
+        assert!(matches!(ret?, DataChannelCmd::StartForwardTcp));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_visitor_handshake_rejects_a_wrong_token() -> Result<()> {
+        let (ack, ret) = visitor("a", "wrong", &[("a", ServiceMode::Reverse)]).await?;
+        assert!(matches!(ack, Ack::AuthFailed));
+        assert!(ret.is_err());
+        Ok(())
+    }
+
+    // A forward service and an unknown one both look like a wrong token
+    #[tokio::test]
+    async fn test_visitor_handshake_rejects_other_services() -> Result<()> {
+        for name in ["a", "unknown"] {
+            // The right token must not help
+            let (ack, ret) = visitor(name, TOKEN, &[("a", ServiceMode::Forward)]).await?;
+            assert!(matches!(ack, Ack::AuthFailed), "{}", name);
+            assert!(ret.is_err());
+        }
+        Ok(())
+    }
+
+    // A reverse service must not be able to create a forward listener
+    #[tokio::test]
+    async fn test_control_channel_rejects_a_reverse_service() -> Result<()> {
+        let l = TcpListener::bind("127.0.0.1:0").await?;
+        let mut client = TcpStream::connect(l.local_addr()?).await?;
+        let (conn, _) = l.accept().await?;
+
+        let control_channels = Arc::new(RwLock::new(ControlChannelMap::new()));
+        let server = tokio::spawn(do_control_channel_handshake::<TcpTransport>(
+            conn,
+            services(&[("a", ServiceMode::Reverse)]),
+            control_channels.clone(),
+            protocol::digest(b"a"),
+            Arc::new(ServerConfig::default()),
+        ));
+
+        let Hello::ControlChannelHello(_, nonce) = read_hello(&mut client).await? else {
+            bail!("Unexpected hello");
+        };
+        let mut concat = Vec::from(TOKEN.as_bytes());
+        concat.extend_from_slice(&nonce);
+        client
+            .write_all(&protocol::encode(&Auth(protocol::digest(&concat)))?)
+            .await?;
+        assert!(matches!(read_ack(&mut client).await?, Ack::AuthFailed));
+        assert!(server.await?.is_err());
+        assert!(control_channels
+            .read()
+            .await
+            .get1(&protocol::digest(b"a"))
+            .is_none());
         Ok(())
     }
 }

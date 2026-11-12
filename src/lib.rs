@@ -7,6 +7,8 @@ mod helper;
 mod multi_map;
 mod protocol;
 mod transport;
+#[cfg(any(feature = "client", feature = "server"))]
+mod udp;
 
 pub use cli::Cli;
 use cli::KeypairType;

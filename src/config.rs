@@ -70,7 +70,12 @@ pub struct ClientServiceConfig {
     pub service_type: ServiceType,
     #[serde(skip)]
     pub name: String,
-    pub local_addr: String,
+    #[serde(default)]
+    pub mode: ServiceMode,
+    /// Forward: the local service the client connects to
+    pub local_addr: Option<String>,
+    /// Reverse: where the client listens for visitors
+    pub bind_addr: Option<String>,
     #[serde(default)] // Default to false
     pub prefer_ipv6: bool,
     pub token: Option<MaskedString>,
@@ -86,6 +91,18 @@ impl ClientServiceConfig {
             ..Default::default()
         }
     }
+}
+
+/// Which side exposes the service
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ServiceMode {
+    /// The client exposes a local service, the server binds the public port
+    #[serde(rename = "forward")]
+    #[default]
+    Forward,
+    /// The server exposes one of its local services, the client binds the port
+    #[serde(rename = "reverse")]
+    Reverse,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
@@ -179,9 +196,12 @@ fn expand_service(
     Ok(services)
 }
 
+/// `forward_key` and `reverse_key` name the address a port range is taken
+/// from, for services in forward and in reverse mode
 fn expand_services<'de, D, T>(
     deserializer: D,
-    addr_key: &str,
+    forward_key: &str,
+    reverse_key: &str,
 ) -> std::result::Result<HashMap<String, T>, D::Error>
 where
     D: Deserializer<'de>,
@@ -189,6 +209,10 @@ where
 {
     let mut services = HashMap::new();
     for (name, table) in HashMap::<String, toml::Table>::deserialize(deserializer)? {
+        let addr_key = match table.get("mode").and_then(|v| v.as_str()) {
+            Some("reverse") => reverse_key,
+            _ => forward_key,
+        };
         let parts = expand_service(&name, table, addr_key)
             .map_err(|e| D::Error::custom(format!("service `{}`: {:#}", name, e)))?;
         for (part, table) in parts {
@@ -209,30 +233,51 @@ where
 fn server_services<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<HashMap<String, ServerServiceConfig>, D::Error> {
-    expand_services(deserializer, "bind_addr")
+    expand_services(deserializer, "bind_addr", "local_addr")
 }
 
 fn client_services<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<HashMap<String, ClientServiceConfig>, D::Error> {
-    expand_services(deserializer, "local_addr")
+    expand_services(deserializer, "local_addr", "bind_addr")
 }
 
+/// A service that binds `addr` on its side
+type Bind<'a> = (&'a str, ServiceType, &'a str);
+
 /// Whether two services would bind the same port
-fn same_port(a: &ServerServiceConfig, b: &ServerServiceConfig) -> bool {
-    if a.service_type != b.service_type {
+fn same_port(a: &Bind, b: &Bind) -> bool {
+    if a.1 != b.1 {
         return false;
     }
-    match (
-        a.bind_addr.parse::<SocketAddr>(),
-        b.bind_addr.parse::<SocketAddr>(),
-    ) {
+    match (a.2.parse::<SocketAddr>(), b.2.parse::<SocketAddr>()) {
         (Ok(x), Ok(y)) => {
             x.port() == y.port()
                 && (x.ip() == y.ip() || x.ip().is_unspecified() || y.ip().is_unspecified())
         }
-        _ => a.bind_addr == b.bind_addr,
+        _ => a.2 == b.2,
     }
+}
+
+/// Fails when two of the services bind the same port
+fn check_bind_conflicts(mut binds: Vec<Bind>) -> Result<()> {
+    binds.sort_by(|a, b| a.0.cmp(b.0));
+    for (i, a) in binds.iter().enumerate() {
+        if let Some(b) = binds[i + 1..].iter().find(|b| same_port(a, b)) {
+            let protocol = match a.1 {
+                ServiceType::Tcp => "tcp",
+                ServiceType::Udp => "udp",
+            };
+            bail!(
+                "Services {} and {} both bind {} {}",
+                a.0,
+                b.0,
+                protocol,
+                a.2
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Per service config
@@ -244,7 +289,12 @@ pub struct ServerServiceConfig {
     pub service_type: ServiceType,
     #[serde(skip)]
     pub name: String,
-    pub bind_addr: String,
+    #[serde(default)]
+    pub mode: ServiceMode,
+    /// Forward: where the server listens for visitors
+    pub bind_addr: Option<String>,
+    /// Reverse: the local service the server connects to
+    pub local_addr: Option<String>,
     pub token: Option<MaskedString>,
     pub token_file: Option<String>,
     pub nodelay: Option<bool>,
@@ -471,25 +521,43 @@ impl Config {
                     bail!("The token of service {} is not set", name);
                 }
             }
-        }
-
-        let mut services: Vec<_> = server.services.values().collect();
-        services.sort_by(|a, b| a.name.cmp(&b.name));
-        for (i, a) in services.iter().enumerate() {
-            if let Some(b) = services[i + 1..].iter().find(|b| same_port(a, b)) {
-                let protocol = match a.service_type {
-                    ServiceType::Tcp => "tcp",
-                    ServiceType::Udp => "udp",
-                };
-                bail!(
-                    "Services {} and {} both bind {} {}",
-                    a.name,
-                    b.name,
-                    protocol,
-                    a.bind_addr
-                );
+            match s.mode {
+                ServiceMode::Forward => {
+                    if s.bind_addr.is_none() {
+                        bail!("Service {} needs `bind_addr`", name);
+                    }
+                    if s.local_addr.is_some() {
+                        bail!(
+                            "Service {} must not set `local_addr`, it is only used with `mode = \"reverse\"`",
+                            name
+                        );
+                    }
+                }
+                ServiceMode::Reverse => {
+                    if s.local_addr.is_none() {
+                        bail!(
+                            "Reverse service {} needs `local_addr`, the address the server connects to",
+                            name
+                        );
+                    }
+                    if s.bind_addr.is_some() {
+                        bail!(
+                            "Reverse service {} must not set `bind_addr`. The client listens, set `bind_addr` in `[client.services]`",
+                            name
+                        );
+                    }
+                }
             }
         }
+
+        // Only forward services bind a port on the server
+        check_bind_conflicts(
+            server
+                .services
+                .values()
+                .filter_map(|s| Some((s.name.as_str(), s.service_type, s.bind_addr.as_deref()?)))
+                .collect(),
+        )?;
 
         Config::validate_transport_config(&mut server.transport, true)?;
 
@@ -516,7 +584,43 @@ impl Config {
             if s.retry_interval.is_none() {
                 s.retry_interval = Some(client.retry_interval);
             }
+            match s.mode {
+                ServiceMode::Forward => {
+                    if s.local_addr.is_none() {
+                        bail!("Service {} needs `local_addr`", name);
+                    }
+                    if s.bind_addr.is_some() {
+                        bail!(
+                            "Service {} must not set `bind_addr`, it is only used with `mode = \"reverse\"`",
+                            name
+                        );
+                    }
+                }
+                ServiceMode::Reverse => {
+                    if s.bind_addr.is_none() {
+                        bail!(
+                            "Reverse service {} needs `bind_addr`, the address the client listens at",
+                            name
+                        );
+                    }
+                    if s.local_addr.is_some() {
+                        bail!(
+                            "Reverse service {} must not set `local_addr`. The server connects to its own service, set `local_addr` in `[server.services]`",
+                            name
+                        );
+                    }
+                }
+            }
         }
+
+        // Only reverse services bind a port on the client
+        check_bind_conflicts(
+            client
+                .services
+                .values()
+                .filter_map(|s| Some((s.name.as_str(), s.service_type, s.bind_addr.as_deref()?)))
+                .collect(),
+        )?;
 
         Config::validate_transport_config(&mut client.transport, false)?;
 
@@ -700,7 +804,7 @@ mod tests {
             ServerServiceConfig {
                 service_type: ServiceType::Tcp,
                 name: "foo1".into(),
-                bind_addr: "127.0.0.1:80".into(),
+                bind_addr: Some("127.0.0.1:80".into()),
                 token: None,
                 ..Default::default()
             },
@@ -750,7 +854,7 @@ mod tests {
             ClientServiceConfig {
                 service_type: ServiceType::Tcp,
                 name: "foo1".into(),
-                local_addr: "127.0.0.1:80".into(),
+                local_addr: Some("127.0.0.1:80".into()),
                 token: None,
                 ..Default::default()
             },
@@ -833,15 +937,18 @@ mod tests {
         );
         let s = &server.services["game#1/udp"];
         assert_eq!(s.service_type, ServiceType::Udp);
-        assert_eq!(s.bind_addr, "0.0.0.0:27016");
+        assert_eq!(s.bind_addr.as_deref(), Some("0.0.0.0:27016"));
         assert_eq!(s.name, "game#1/udp");
-        assert_eq!(server.services["voice"].bind_addr, "[::]:9987");
+        assert_eq!(
+            server.services["voice"].bind_addr.as_deref(),
+            Some("[::]:9987")
+        );
 
         // The client names the parts the same way and keeps the other options
         let client = cfg.client.unwrap();
         let c = &client.services["game#1/tcp"];
         assert_eq!(c.service_type, ServiceType::Tcp);
-        assert_eq!(c.local_addr, "192.168.1.10:37016");
+        assert_eq!(c.local_addr.as_deref(), Some("192.168.1.10:37016"));
         assert_eq!(c.nodelay, Some(false));
         assert_eq!(client.services.len(), 4);
         Ok(())
@@ -899,6 +1006,168 @@ mod tests {
             service("\"a#0\"", "tcp", "0.0.0.0:3")
         ))
         .is_err());
+    }
+
+    const REVERSE_SERVER: &str = r#"
+        [server]
+        bind_addr = "0.0.0.0:2333"
+        default_token = "0123456789abcdef0123"
+        "#;
+    const REVERSE_CLIENT: &str = r#"
+        [client]
+        remote_addr = "example.com:2333"
+        default_token = "0123456789abcdef0123"
+        "#;
+
+    #[test]
+    fn test_reverse_services() -> Result<()> {
+        let cfg = Config::from_str(&format!(
+            r#"{REVERSE_SERVER}
+            [server.services.crowdsec]
+            mode = "reverse"
+            local_addr = "127.0.0.1:8080"
+            [server.services.web]
+            bind_addr = "0.0.0.0:8080"
+            {REVERSE_CLIENT}
+            [client.services.crowdsec]
+            mode = "reverse"
+            bind_addr = "0.0.0.0:3000"
+            [client.services.web]
+            local_addr = "127.0.0.1:80"
+            "#
+        ))?;
+        let server = cfg.server.unwrap();
+        let s = &server.services["crowdsec"];
+        assert_eq!(s.mode, ServiceMode::Reverse);
+        assert_eq!(s.local_addr.as_deref(), Some("127.0.0.1:8080"));
+        assert_eq!(s.bind_addr, None);
+        // Forward is the default and unchanged
+        assert_eq!(server.services["web"].mode, ServiceMode::Forward);
+        let client = cfg.client.unwrap();
+        let c = &client.services["crowdsec"];
+        assert_eq!(c.mode, ServiceMode::Reverse);
+        assert_eq!(c.bind_addr.as_deref(), Some("0.0.0.0:3000"));
+        assert_eq!(c.local_addr, None);
+        assert_eq!(client.services["web"].mode, ServiceMode::Forward);
+        Ok(())
+    }
+
+    #[test]
+    fn test_reverse_services_invalid() {
+        let server = |service: &str| {
+            Config::from_str(&format!("{REVERSE_SERVER}\n[server.services.a]\n{service}"))
+        };
+        let client = |service: &str| {
+            Config::from_str(&format!("{REVERSE_CLIENT}\n[client.services.a]\n{service}"))
+        };
+
+        // Server side
+        assert!(server("mode = \"reverse\"\nlocal_addr = \"127.0.0.1:1\"").is_ok());
+        assert!(server("mode = \"reverse\"").is_err());
+        assert!(server("mode = \"reverse\"\nbind_addr = \"0.0.0.0:1\"").is_err());
+        assert!(server(
+            "mode = \"reverse\"\nlocal_addr = \"127.0.0.1:1\"\nbind_addr = \"0.0.0.0:1\""
+        )
+        .is_err());
+        assert!(server("bind_addr = \"0.0.0.0:1\"").is_ok());
+        assert!(server("mode = \"forward\"\nbind_addr = \"0.0.0.0:1\"").is_ok());
+        assert!(server("local_addr = \"127.0.0.1:1\"").is_err());
+        assert!(server("bind_addr = \"0.0.0.0:1\"\nlocal_addr = \"127.0.0.1:1\"").is_err());
+        assert!(server("mode = \"sideways\"\nbind_addr = \"0.0.0.0:1\"").is_err());
+
+        // Client side
+        assert!(client("mode = \"reverse\"\nbind_addr = \"0.0.0.0:1\"").is_ok());
+        assert!(client("mode = \"reverse\"").is_err());
+        assert!(client("mode = \"reverse\"\nlocal_addr = \"127.0.0.1:1\"").is_err());
+        assert!(client(
+            "mode = \"reverse\"\nlocal_addr = \"127.0.0.1:1\"\nbind_addr = \"0.0.0.0:1\""
+        )
+        .is_err());
+        assert!(client("local_addr = \"127.0.0.1:1\"").is_ok());
+        assert!(client("bind_addr = \"0.0.0.0:1\"").is_err());
+        assert!(client("").is_err());
+    }
+
+    #[test]
+    fn test_reverse_bind_conflicts() {
+        let server = |services: &str| Config::from_str(&format!("{REVERSE_SERVER}\n{services}"));
+        let client = |services: &str| Config::from_str(&format!("{REVERSE_CLIENT}\n{services}"));
+
+        // Reverse services do not bind on the server, so they never conflict there
+        assert!(server(
+            r#"[server.services.a]
+            bind_addr = "0.0.0.0:7000"
+            [server.services.b]
+            mode = "reverse"
+            local_addr = "0.0.0.0:7000"
+            [server.services.c]
+            mode = "reverse"
+            local_addr = "0.0.0.0:7000""#
+        )
+        .is_ok());
+
+        // Reverse services bind on the client
+        let reverse = |name: &str, ty: &str, addr: &str| {
+            format!(
+                "[client.services.{name}]\nmode = \"reverse\"\ntype = \"{ty}\"\nbind_addr = \"{addr}\"\n"
+            )
+        };
+        let two = |a: String, b: String| client(&format!("{a}{b}"));
+        assert!(two(
+            reverse("a", "tcp", "0.0.0.0:7000"),
+            reverse("b", "tcp", "127.0.0.1:7000")
+        )
+        .is_err());
+        assert!(two(
+            reverse("a", "tcp", "127.0.0.1:7000"),
+            reverse("b", "udp", "127.0.0.1:7000")
+        )
+        .is_ok());
+        assert!(two(
+            reverse("a", "tcp", "127.0.0.1:7000"),
+            reverse("b", "tcp", "127.0.0.1:7001")
+        )
+        .is_ok());
+        // Forward services do not bind on the client
+        assert!(client(&format!(
+            "{}[client.services.f]\nlocal_addr = \"127.0.0.1:7000\"\n",
+            reverse("a", "tcp", "127.0.0.1:7000")
+        ))
+        .is_ok());
+    }
+
+    #[test]
+    fn test_reverse_port_ranges() -> Result<()> {
+        let cfg = Config::from_str(&format!(
+            r#"{REVERSE_SERVER}
+            [server.services.game]
+            mode = "reverse"
+            type = "tcp+udp"
+            local_addr = "127.0.0.1:27015-27016"
+            {REVERSE_CLIENT}
+            [client.services.game]
+            mode = "reverse"
+            type = "tcp+udp"
+            bind_addr = "0.0.0.0:37015-37016"
+            "#
+        ))?;
+        let server = cfg.server.unwrap();
+        let client = cfg.client.unwrap();
+        let mut names: Vec<_> = server.services.keys().cloned().collect();
+        names.sort();
+        assert_eq!(
+            names,
+            ["game#0/tcp", "game#0/udp", "game#1/tcp", "game#1/udp"]
+        );
+        let s = &server.services["game#1/udp"];
+        assert_eq!(s.service_type, ServiceType::Udp);
+        assert_eq!(s.mode, ServiceMode::Reverse);
+        assert_eq!(s.local_addr.as_deref(), Some("127.0.0.1:27016"));
+        let c = &client.services["game#0/tcp"];
+        assert_eq!(c.service_type, ServiceType::Tcp);
+        assert_eq!(c.bind_addr.as_deref(), Some("0.0.0.0:37015"));
+        assert_eq!(client.services.len(), 4);
+        Ok(())
     }
 
     #[test]
