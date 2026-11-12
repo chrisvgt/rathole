@@ -1,0 +1,38 @@
+# Reverse services: the server exposes its local services, the client listens
+[client]
+remote_addr = "127.0.0.1:2383"
+default_token = "default_token_if_not_specify"
+
+[client.transport]
+type = "tls"
+[client.transport.tls]
+trusted_root = "examples/tls/rootCA.crt"
+hostname = "localhost"
+
+[client.services.echo]
+mode = "reverse"
+type = "udp"
+bind_addr = "127.0.0.1:2384"
+[client.services.pingpong]
+mode = "reverse"
+type = "udp"
+bind_addr = "127.0.0.1:2385"
+
+[server]
+bind_addr = "127.0.0.1:2383"
+default_token = "default_token_if_not_specify"
+
+[server.transport]
+type = "tls"
+[server.transport.tls]
+pkcs12 = "examples/tls/identity.pfx"
+pkcs12_password = "1234"
+
+[server.services.echo]
+mode = "reverse"
+type = "udp"
+local_addr = "127.0.0.1:8102"
+[server.services.pingpong]
+mode = "reverse"
+type = "udp"
+local_addr = "127.0.0.1:8103"

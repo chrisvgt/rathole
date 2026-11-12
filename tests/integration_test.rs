@@ -157,6 +157,71 @@ async fn tcp_udp_range() -> Result<()> {
     Ok(())
 }
 
+// Reverse services: the echo and pingpong servers are the server's local
+// services, the visitors connect to the ports the client listens at. The
+// ports differ from the tests above, which run at the same time
+async fn reverse(proto: Type, local: [&'static str; 2], exposed: [&'static str; 2]) -> Result<()> {
+    init();
+
+    for (addr, pingpong) in [(local[0], false), (local[1], true)] {
+        tokio::spawn(async move {
+            let ret = match (proto, pingpong) {
+                (Type::Tcp, false) => common::tcp::echo_server(addr).await,
+                (Type::Tcp, true) => common::tcp::pingpong_server(addr).await,
+                (Type::Udp, false) => common::udp::echo_server(addr).await,
+                (Type::Udp, true) => common::udp::pingpong_server(addr).await,
+            };
+            if let Err(e) = ret {
+                panic!("Failed to run the server for testing: {:?}", e);
+            }
+        });
+    }
+
+    let dir = match proto {
+        Type::Tcp => "tests/for_tcp",
+        Type::Udp => "tests/for_udp",
+    };
+    let configs = [
+        Some(format!("{dir}/reverse_tcp_transport.toml")),
+        #[cfg(any(
+            all(target_os = "macos", feature = "rustls"),
+            all(
+                not(target_os = "macos"),
+                any(feature = "native-tls", feature = "rustls")
+            ),
+        ))]
+        Some(format!("{dir}/reverse_tls_transport.toml")),
+        #[cfg(feature = "noise")]
+        Some(format!("{dir}/reverse_noise_transport.toml")),
+    ];
+    for config in configs.into_iter().flatten() {
+        // The config path must be 'static for the spawned tasks
+        let config: &'static str = Box::leak(config.into_boxed_str());
+        test_with(config, proto, exposed[0], exposed[1]).await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn reverse_tcp() -> Result<()> {
+    reverse(
+        Type::Tcp,
+        ["127.0.0.1:8100", "127.0.0.1:8101"],
+        ["127.0.0.1:2374", "127.0.0.1:2375"],
+    )
+    .await
+}
+
+#[tokio::test]
+async fn reverse_udp() -> Result<()> {
+    reverse(
+        Type::Udp,
+        ["127.0.0.1:8102", "127.0.0.1:8103"],
+        ["127.0.0.1:2384", "127.0.0.1:2385"],
+    )
+    .await
+}
+
 // Peers that never finish the transport handshake must not delay other connections
 #[cfg(feature = "noise")]
 #[tokio::test]
