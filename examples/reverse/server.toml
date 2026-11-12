@@ -1,0 +1,17 @@
+# Reverse services: the server exposes one of ITS local services. No extra
+# port is opened on this machine, everything goes through `bind_addr` below.
+[server]
+bind_addr = "0.0.0.0:2333"
+default_token = "use_a_long_random_token" # e.g. from `openssl rand -base64 32`
+
+[server.transport]
+type = "noise"
+[server.transport.noise]
+# The private key from `rathole --genkey`. Never use a key from the internet.
+local_private_key = "generate_with_rathole_--genkey"
+
+# The CrowdSec dashboard, which only listens on localhost of the server
+[server.services.crowdsec]
+mode = "reverse"
+type = "tcp"
+local_addr = "127.0.0.1:8080" # The server connects here. The client cannot change it
