@@ -4,7 +4,6 @@ use lazy_static::lazy_static;
 #[derive(clap::ValueEnum, Clone, Debug, Copy)]
 pub enum KeypairType {
     X25519,
-    X448,
 }
 
 lazy_static! {
@@ -60,4 +59,18 @@ pub struct Cli {
     /// The DH function to use is x25519
     #[arg(long, value_enum, value_name = "CURVE")]
     pub genkey: Option<Option<KeypairType>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn test_genkey_curves() {
+        assert!(Cli::try_parse_from(["rathole", "--genkey"]).is_ok());
+        assert!(Cli::try_parse_from(["rathole", "--genkey", "x25519"]).is_ok());
+        // snow has no Curve448 implementation, the option never worked
+        assert!(Cli::try_parse_from(["rathole", "--genkey", "x448"]).is_err());
+    }
 }

@@ -1,0 +1,19 @@
+name: Build the rathole dev image
+description: Builds docker/dev.Dockerfile per job (layer-cached via the GitHub Actions cache) with Buildx and exposes it as RATHOLE_DEV_IMAGE for docker.sh.
+runs:
+  using: composite
+  steps:
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v4
+    - name: Build the dev image
+      uses: docker/build-push-action@v7
+      with:
+        context: .
+        file: docker/dev.Dockerfile
+        tags: rathole-dev:ci
+        load: true
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    - name: Expose RATHOLE_DEV_IMAGE
+      shell: bash
+      run: echo "RATHOLE_DEV_IMAGE=rathole-dev:ci" >> "$GITHUB_ENV"

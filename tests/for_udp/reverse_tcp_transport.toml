@@ -1,0 +1,26 @@
+# Reverse services: the server exposes its local services, the client listens
+[client]
+remote_addr = "127.0.0.1:2383"
+default_token = "default_token_if_not_specify"
+
+[client.services.echo]
+mode = "reverse"
+type = "udp"
+bind_addr = "127.0.0.1:2384"
+[client.services.pingpong]
+mode = "reverse"
+type = "udp"
+bind_addr = "127.0.0.1:2385"
+
+[server]
+bind_addr = "127.0.0.1:2383"
+default_token = "default_token_if_not_specify"
+
+[server.services.echo]
+mode = "reverse"
+type = "udp"
+local_addr = "127.0.0.1:8102"
+[server.services.pingpong]
+mode = "reverse"
+type = "udp"
+local_addr = "127.0.0.1:8103"

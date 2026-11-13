@@ -239,16 +239,59 @@ mod tests {
     use tokio::io::{duplex, DuplexStream};
 
     const PATTERN: &str = "Noise_NK_25519_ChaChaPoly_BLAKE2s";
+    const PATTERNS: [&str; 4] = [
+        "Noise_NK_25519_ChaChaPoly_BLAKE2s",
+        "Noise_KK_25519_ChaChaPoly_BLAKE2s",
+        "Noise_XK_25519_ChaChaPoly_BLAKE2s",
+        "Noise_IK_25519_ChaChaPoly_BLAKE2s",
+    ];
 
     fn states() -> anyhow::Result<(HandshakeState, HandshakeState)> {
         let key = Builder::new(PATTERN.parse()?).generate_keypair()?;
         let initiator = Builder::new(PATTERN.parse()?)
-            .remote_public_key(&key.public)
+            .remote_public_key(&key.public)?
             .build_initiator()?;
         let responder = Builder::new(PATTERN.parse()?)
-            .local_private_key(&key.private)
+            .local_private_key(&key.private)?
             .build_responder()?;
         Ok((initiator, responder))
+    }
+
+    /// The same as `states`, but the side of snowstorm uses the snow 0.9 it was
+    /// built with.
+    ///
+    /// Keys are set the way `NoiseTransport` sets them: the initiator always has
+    /// a local private key, even for NK, and the responder gets the initiator's
+    /// public key for KK.
+    fn mixed_states(
+        pattern: &str,
+        snowstorm_is_initiator: bool,
+    ) -> anyhow::Result<(HandshakeState, snowstorm::snow::HandshakeState)> {
+        use snowstorm::snow::Builder as OldBuilder;
+        let server = Builder::new(pattern.parse()?).generate_keypair()?;
+        let client = Builder::new(pattern.parse()?).generate_keypair()?;
+        let kk = pattern.contains("_KK_");
+        if snowstorm_is_initiator {
+            let theirs = OldBuilder::new(pattern.parse()?)
+                .local_private_key(&client.private)
+                .remote_public_key(&server.public)
+                .build_initiator()?;
+            let mut ours = Builder::new(pattern.parse()?).local_private_key(&server.private)?;
+            if kk {
+                ours = ours.remote_public_key(&client.public)?;
+            }
+            Ok((ours.build_responder()?, theirs))
+        } else {
+            let ours = Builder::new(pattern.parse()?)
+                .local_private_key(&client.private)?
+                .remote_public_key(&server.public)?
+                .build_initiator()?;
+            let mut theirs = OldBuilder::new(pattern.parse()?).local_private_key(&server.private);
+            if kk {
+                theirs = theirs.remote_public_key(&client.public);
+            }
+            Ok((ours, theirs.build_responder()?))
+        }
     }
 
     async fn pair() -> anyhow::Result<(NoiseStream<DuplexStream>, NoiseStream<DuplexStream>)> {
@@ -340,38 +383,35 @@ mod tests {
     /// rathole up to v0.6.3 used snowstorm. Both must understand each other
     #[tokio::test]
     async fn test_compatible_with_snowstorm() -> anyhow::Result<()> {
-        for snowstorm_is_initiator in [true, false] {
-            let (initiator, responder) = states()?;
-            let (a, b) = duplex(1024);
-            let (mut ours, mut theirs) = if snowstorm_is_initiator {
-                let (theirs, ours) = tokio::join!(
-                    snowstorm::NoiseStream::handshake(a, initiator),
-                    NoiseStream::handshake(b, responder)
-                );
-                (ours?, theirs?)
-            } else {
+        use anyhow::Context as _;
+        for pattern in PATTERNS {
+            for snowstorm_is_initiator in [true, false] {
+                let ctx = || format!("{pattern}, snowstorm_is_initiator={snowstorm_is_initiator}");
+                let (our_state, their_state) =
+                    mixed_states(pattern, snowstorm_is_initiator).with_context(ctx)?;
+                let (a, b) = duplex(1024);
                 let (ours, theirs) = tokio::join!(
-                    NoiseStream::handshake(a, initiator),
-                    snowstorm::NoiseStream::handshake(b, responder)
+                    NoiseStream::handshake(a, our_state),
+                    snowstorm::NoiseStream::handshake(b, their_state)
                 );
-                (ours?, theirs?)
-            };
+                let (mut ours, mut theirs) = (ours.with_context(ctx)?, theirs.with_context(ctx)?);
 
-            let sent = data(200_000);
-            let expected = sent.clone();
-            let reader = tokio::spawn(async move {
-                let mut got = vec![0u8; expected.len()];
-                theirs.read_exact(&mut got).await?;
-                assert_eq!(got, expected);
-                theirs.write_all(&expected).await?;
-                anyhow::Ok(())
-            });
-            ours.write_all(&sent).await?;
-            ours.flush().await?;
-            let mut back = vec![0u8; sent.len()];
-            ours.read_exact(&mut back).await?;
-            assert_eq!(back, sent);
-            reader.await??;
+                let sent = data(200_000);
+                let expected = sent.clone();
+                let reader = tokio::spawn(async move {
+                    let mut got = vec![0u8; expected.len()];
+                    theirs.read_exact(&mut got).await?;
+                    assert_eq!(got, expected);
+                    theirs.write_all(&expected).await?;
+                    anyhow::Ok(())
+                });
+                ours.write_all(&sent).await.with_context(ctx)?;
+                ours.flush().await.with_context(ctx)?;
+                let mut back = vec![0u8; sent.len()];
+                ours.read_exact(&mut back).await.with_context(ctx)?;
+                assert_eq!(back, sent, "{}", ctx());
+                reader.await??;
+            }
         }
         Ok(())
     }

@@ -1,4 +1,4 @@
-# Build:  docker build -t rathole .
+# Build:  docker build -t rathole -f docker/Dockerfile .
 #         docker build -t rathole --build-arg FEATURES=server,noise .
 # Image:  ghcr.io/chrisvgt/rathole, published with every release
 # Run:    docker run -d --network host -v ./server.toml:/app/config.toml:ro rathole config.toml

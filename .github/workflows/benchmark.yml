@@ -35,7 +35,8 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Build the dev image
+        uses: ./.github/actions/dev-image
 
       - name: Pick versions
         id: versions
@@ -49,7 +50,6 @@ jobs:
             # The README shows the fork base and the last two releases
             echo "readme=$(echo $newest) v0.5.0"
             echo "charts=v0.5.0 $(echo $(echo "$newest" | tac))"
-            echo "rust=$(rustc --version | cut -d ' ' -f 2)"
           } >> "$GITHUB_OUTPUT"
           # Releases are only built from main
           latest=$(echo "$newest" | head -n 1)
@@ -58,12 +58,18 @@ jobs:
             exit 1
           fi
 
+      - name: Rust version
+        id: rust
+        run: |
+          RUST_VERSION=$(./docker.sh run -- rustc --version | cut -d ' ' -f 2)
+          echo "rust=$RUST_VERSION" >> "$GITHUB_OUTPUT"
+
       # Tags do not change, so their binaries are only built once per Rust version
       - uses: actions/cache@v6
         with:
           path: target/bench-compare/bin
-          key: bench-${{ steps.versions.outputs.rust }}-${{ steps.versions.outputs.latest }}
-          restore-keys: bench-${{ steps.versions.outputs.rust }}-
+          key: bench-${{ steps.rust.outputs.rust }}-${{ steps.versions.outputs.latest }}
+          restore-keys: bench-${{ steps.rust.outputs.rust }}-
 
       - name: Run the benchmark
         env:
@@ -71,7 +77,7 @@ jobs:
           FRP_VERSIONS: latest 0.38.0
         run: |
           mkdir -p target
-          benches/scripts/compare.sh ${{ steps.versions.outputs.all }} -- --rounds 3 \
+          ./docker.sh run -- benches/scripts/compare.sh ${{ steps.versions.outputs.all }} -- --rounds 3 \
             > target/bench-result.md 2> >(tee target/bench.log >&2)
           cat target/bench-result.md
 
@@ -81,14 +87,14 @@ jobs:
           cpu=$(lscpu | sed -n 's/^Model name: *//p' | head -n 1 \
             | sed -E 's/\((R|TM)\)//g; s/ CPU @.*//; s/ [0-9]+-Core Processor//; s/ Processor//')
           ram=$(awk '/^MemTotal:/ { printf "%.0f", $2 / 1048576 }' /proc/meminfo)
-          python3 benches/scripts/update-docs.py \
+          ./docker.sh run -- python3 benches/scripts/update-docs.py \
             --result target/bench-result.md --log target/bench.log \
             --machine "GitHub Actions runner with $(nproc) vCPUs ($cpu) and $ram GB RAM, Linux" \
-            --rust ${{ steps.versions.outputs.rust }} \
-            --command 'FRP_VERSIONS="latest 0.38.0" benches/scripts/compare.sh ${{ steps.versions.outputs.all }} -- --rounds 3' \
+            --rust ${{ steps.rust.outputs.rust }} \
+            --command 'FRP_VERSIONS="latest 0.38.0" ./docker.sh run -- benches/scripts/compare.sh ${{ steps.versions.outputs.all }} -- --rounds 3' \
             ${{ steps.versions.outputs.readme }}
           mapfile -t frp < <(grep -o '^| frp v[0-9.]*' target/bench-result.md | cut -c 3- | sort -u -V)
-          python3 benches/scripts/charts.py docs/benchmark-results.md docs/img \
+          ./docker.sh run -- python3 benches/scripts/charts.py docs/benchmark-results.md docs/img \
             ${{ steps.versions.outputs.charts }} "${frp[@]}"
           git diff --stat
 

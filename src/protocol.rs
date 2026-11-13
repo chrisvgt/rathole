@@ -17,10 +17,15 @@ pub const CURRENT_PROTO_VERSION: ProtocolVersion = PROTO_V2;
 
 pub type Digest = [u8; HASH_WIDTH_IN_BYTES];
 
+// The names are part of the protocol documentation
+#[allow(clippy::enum_variant_names)]
 #[derive(Deserialize, Serialize, Debug)]
 pub enum Hello {
     ControlChannelHello(ProtocolVersion, Digest), // sha256sum(service name) or a nonce
     DataChannelHello(ProtocolVersion, Digest),    // token provided by CreateDataChannel
+    // sha256sum(service name) of a reverse service. Keep it last: postcard
+    // encodes the variant index, so the others keep their encoding
+    VisitorHello(ProtocolVersion, Digest),
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -194,25 +199,15 @@ pub async fn read_hello<T: AsyncRead + AsyncWrite + Unpin>(conn: &mut T) -> Resu
         .with_context(|| "Failed to read hello")?;
     let hello = postcard::from_bytes(&buf).with_context(|| "Failed to deserialize hello")?;
 
-    match hello {
-        Hello::ControlChannelHello(v, _) => {
-            if v != CURRENT_PROTO_VERSION {
-                bail!(
-                    "Protocol version mismatched. Expected {}, got {}. Please update `rathole`.",
-                    CURRENT_PROTO_VERSION,
-                    v
-                );
-            }
-        }
-        Hello::DataChannelHello(v, _) => {
-            if v != CURRENT_PROTO_VERSION {
-                bail!(
-                    "Protocol version mismatched. Expected {}, got {}. Please update `rathole`.",
-                    CURRENT_PROTO_VERSION,
-                    v
-                );
-            }
-        }
+    let (Hello::ControlChannelHello(v, _)
+    | Hello::DataChannelHello(v, _)
+    | Hello::VisitorHello(v, _)) = hello;
+    if v != CURRENT_PROTO_VERSION {
+        bail!(
+            "Protocol version mismatched. Expected {}, got {}. Please update `rathole`.",
+            CURRENT_PROTO_VERSION,
+            v
+        );
     }
 
     Ok(hello)
@@ -252,4 +247,62 @@ pub async fn read_data_cmd<T: AsyncRead + AsyncWrite + Unpin>(
         .await
         .with_context(|| "Failed to read cmd")?;
     postcard::from_bytes(&bytes).with_context(|| "Failed to deserialize data cmd")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A stream that has `hello` ready to be read
+    async fn piped(hello: &Hello) -> Result<tokio::io::DuplexStream> {
+        let (a, mut b) = tokio::io::duplex(256);
+        b.write_all(&encode(hello)?).await?;
+        Ok(a)
+    }
+
+    #[test]
+    fn test_hello_length_is_the_same_for_all_variants() -> Result<()> {
+        let d = digest(b"service");
+        for hello in [
+            Hello::ControlChannelHello(CURRENT_PROTO_VERSION, d),
+            Hello::DataChannelHello(CURRENT_PROTO_VERSION, d),
+            Hello::VisitorHello(CURRENT_PROTO_VERSION, d),
+            Hello::VisitorHello(CURRENT_PROTO_VERSION, [0xff; HASH_WIDTH_IN_BYTES]),
+        ] {
+            assert_eq!(encode(&hello)?.len(), PACKET_LEN.hello, "{:?}", hello);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_existing_hello_encoding_is_unchanged() -> Result<()> {
+        let d = [7u8; HASH_WIDTH_IN_BYTES];
+        // The first byte is the variant index
+        assert_eq!(encode(&Hello::ControlChannelHello(2, d))?[..2], [0, 2]);
+        assert_eq!(encode(&Hello::DataChannelHello(2, d))?[..2], [1, 2]);
+        assert_eq!(encode(&Hello::VisitorHello(2, d))?[..2], [2, 2]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_read_hello_checks_the_version_of_every_variant() -> Result<()> {
+        let d = digest(b"service");
+        for hello in [
+            Hello::ControlChannelHello(CURRENT_PROTO_VERSION + 1, d),
+            Hello::DataChannelHello(CURRENT_PROTO_VERSION + 1, d),
+            Hello::VisitorHello(CURRENT_PROTO_VERSION + 1, d),
+        ] {
+            assert!(
+                read_hello(&mut piped(&hello).await?).await.is_err(),
+                "{:?}",
+                hello
+            );
+        }
+        let hello = Hello::VisitorHello(CURRENT_PROTO_VERSION, d);
+        assert!(matches!(
+            read_hello(&mut piped(&hello).await?).await?,
+            Hello::VisitorHello(_, v) if v == d
+        ));
+        Ok(())
+    }
 }

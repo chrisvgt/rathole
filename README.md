@@ -16,6 +16,7 @@ rathole, like [frp](https://github.com/fatedier/frp) and [ngrok](https://github.
 - [rathole](#rathole)
   - [Features](#features)
   - [Quickstart](#quickstart)
+  - [Docker](#docker)
   - [Configuration](#configuration)
     - [Port ranges and TCP+UDP](#port-ranges-and-tcpudp)
     - [Logging](#logging)
@@ -34,7 +35,7 @@ rathole, like [frp](https://github.com/fatedier/frp) and [ngrok](https://github.
 
 ## Quickstart
 
-A full-powered `rathole` can be obtained from the [release](https://github.com/chrisvgt/rathole/releases) page. Or [build from source](docs/build-guide.md) **for other platforms and minimizing the binary**. A [Dockerfile](Dockerfile) is included to build your own image.
+A full-powered `rathole` can be obtained from the [release](https://github.com/chrisvgt/rathole/releases) page, which also includes the [Docker image](#docker). To [build from source](docs/build-guide.md) for other Linux architectures or a smaller binary, see the build guide. Development needs only Docker: run `./docker.sh build`, `./docker.sh test` and the other commands described in the [build guide](docs/build-guide.md). A [Dockerfile](docker/Dockerfile) is included to build your own image.
 
 The usage of `rathole` is very similar to frp. If you have experience with the latter, then the configuration is very easy for you. The only difference is that configuration of a service is split into the client side and the server side, and a token is mandatory.
 
@@ -92,6 +93,22 @@ So you can `ssh myserver.com:5202` to ssh to your NAS.
 To run `rathole` run as a background service on Linux, checkout the [systemd examples](./examples/systemd).
 
 The server port is reachable from the internet. Use a long random token (`openssl rand -base64 32`), consider the Noise `KK` pattern so that only your client can finish the handshake, see [Transport](./docs/transport.md#bidirectional-authentication), and let [CrowdSec](./examples/crowdsec) ban IPs that keep failing the handshake.
+
+## Docker
+
+Images for amd64 and arm64 are published per release at `ghcr.io/chrisvgt/rathole`, tagged with the version (for example `0.6.5`) and `latest`. The image runs as UID 1000, so the mounted config must be readable by that user.
+
+To run the server:
+
+```sh
+docker run -d --network host \
+  -v ./server.toml:/app/config.toml:ro \
+  ghcr.io/chrisvgt/rathole:latest config.toml
+```
+
+`--network host` lets rathole bind the ports from the config; on Docker Desktop, publish those ports with `-p` instead. Use the same command with `client.toml` on the client side.
+
+To build the image yourself, `./docker.sh image` creates `rathole:local` from [docker/Dockerfile](docker/Dockerfile).
 
 ## Configuration
 
@@ -206,6 +223,35 @@ local_addr = "127.0.0.1:7001"
 
 Server and client must use the same type and the same number of ports, the first port of the server forwards to the first port of the client and so on. Both sides need v0.6.4 or later for this. Each port and protocol runs as a service of its own, named like `app#0` or `game#2/udp` in the logs. Two services that bind the same port with the same protocol are rejected. The full example is in [examples/port_range](./examples/port_range).
 
+### Reverse services
+
+Usually the client exposes a local service and the server opens the public port. With `mode = "reverse"` it is the other way round: the **server** exposes one of its own local services and the **client** listens for visitors. Nothing new is opened on the server, e.g. to reach a dashboard that only listens on `127.0.0.1` of a VPS from the home network:
+
+```toml
+# server.toml
+[server.services.crowdsec]
+mode = "reverse"
+type = "tcp"                    # tcp, udp or tcp+udp. Port ranges work as well
+local_addr = "127.0.0.1:8080"   # The server connects here
+
+# client.toml
+[client.services.crowdsec]
+mode = "reverse"
+type = "tcp"
+bind_addr = "0.0.0.0:3000"      # The client listens here
+```
+
+`mode` defaults to `"forward"`, which is the behavior described above. A reverse service takes `local_addr` on the server and `bind_addr` on the client, the other one is rejected. Both sides need the same `type` and token. Only reverse services bind a port on the client, so only those are checked for conflicts there. The full example, with the noise transport, is in [examples/reverse](./examples/reverse).
+
+Every visitor opens a new connection to the server's `bind_addr` with the configured transport (tcp, tls, noise or websocket), so reverse services are as protected as the others and there is no plaintext fallback. UDP uses one tunnel per service, which is set up again after a failure. The security model is the same as for forward services:
+
+- The client proves it knows the token by sending `sha256(token || nonce)` for a fresh nonce of the server, the token itself is never sent. The server compares in constant time.
+- Unknown services, services in the other mode and a wrong token all get the same answer, so a peer without the token cannot probe which services exist. A token of a reverse service cannot open a forward listener and the other way round.
+- The server only ever connects to the `local_addr` of its own config. The client cannot choose the target.
+- Every handshake step has a timeout and counts against the limit of pending handshakes.
+
+Both sides need a version with reverse services. An older server or client does not understand the new hello and fails to connect. Forward services and their wire format are unchanged.
+
 ### Logging
 
 `rathole`, like many other Rust programs, use environment variables to control the logging level. `info`, `warn`, `error`, `debug`, `trace` are available.
@@ -258,7 +304,7 @@ Since v0.6.2 the server does TLS handshakes in parallel, so rathole opens more t
 The table and charts are updated by a workflow after every release. All versions back to v0.5.0, the setup and what each column means are in [Benchmark results](./docs/benchmark-results.md). Locally the benchmark only runs on request:
 
 ```shell
-cargo bench --bench tunnel
+./docker.sh bench
 ```
 
 The original benchmark from 2021 with HTTP load and graphs is in the [upstream repository](https://github.com/rathole-org/rathole/blob/5a9dd6d939744859af322aeff7fd60f7483a68bc/docs/benchmark.md).
