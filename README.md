@@ -275,23 +275,23 @@ If the bandwidth is more important, TCP_NODELAY can be opted out with `nodelay =
 v0.5.0, the version this fork started from, and the last two releases, compared with [frp](https://github.com/fatedier/frp) v0.38.0 from the original benchmark and the latest frp. Measured on the loopback interface, every value is the median of 3 runs.
 
 <!-- bench:readme -->
-Test machine: GitHub Actions runner with 4 vCPUs (Intel Xeon Platinum 8370C) and 16 GB RAM, Linux, Rust 1.99.1.
+Test machine: GitHub Actions runner with 4 vCPUs (INTEL XEON PLATINUM 8573C) and 16 GB RAM, Linux, Rust 1.99.1.
 
 | Version | Transport | Throughput ↑ | Latency p50 ↓ | Latency p99 ↓ | Connections/s ↑ | Peak memory server / client ↓ |
 |---|---|---|---|---|---|---|
-| v0.6.5 | tcp | 16.81 Gbit/s | 101 µs | 140 µs | 10298 | 10.8 / 10.6 MiB |
-| v0.6.5 | noise | 7.00 Gbit/s | 103 µs | 138 µs | 3730 | 14.5 / 14.4 MiB |
-| v0.6.5 | tls | 11.62 Gbit/s | 107 µs | 144 µs | 4131 | 14.2 / 14.7 MiB |
-| v0.6.4 | tcp | 16.10 Gbit/s | 102 µs | 133 µs | 10112 | 11.7 / 11.6 MiB |
-| v0.6.4 | noise | 7.06 Gbit/s | 107 µs | 140 µs | 3662 | 15.2 / 15.2 MiB |
-| v0.6.4 | tls | 8.42 Gbit/s | 115 µs | 154 µs | 1355 | 21.6 / 24.2 MiB |
-| v0.5.0 | tcp | 8.70 Gbit/s | 98 µs | 150 µs | 10564 | 12.1 / 12.2 MiB |
-| v0.5.0 | noise | 4.55 Gbit/s | 109 µs | 141 µs | 2946 | 43.6 / 35.6 MiB |
-| v0.5.0 | tls | 6.89 Gbit/s | 113 µs | 150 µs | 741 | 19.5 / 22.3 MiB |
-| frp v0.71.1 | tcp | 9.62 Gbit/s | 189 µs | 243 µs | 4804 | 36.1 / 44.1 MiB |
-| frp v0.71.1 | tls | 5.96 Gbit/s | 194 µs | 240 µs | 4495 | 36.7 / 55.4 MiB |
-| frp v0.38.0 | tcp | 4.96 Gbit/s | 183 µs | 227 µs | 5430 | 30.0 / 23.8 MiB |
-| frp v0.38.0 | tls | 3.81 Gbit/s | 193 µs | 242 µs | 4849 | 28.9 / 24.3 MiB |
+| v0.7.0 | tcp | 17.81 Gbit/s | 115 µs | 158 µs | 12094 | 10.9 / 10.7 MiB |
+| v0.7.0 | noise | 6.74 Gbit/s | 114 µs | 165 µs | 3959 | 14.4 / 14.3 MiB |
+| v0.7.0 | tls | 12.60 Gbit/s | 113 µs | 158 µs | 4630 | 14.2 / 14.7 MiB |
+| v0.6.5 | tcp | 17.58 Gbit/s | 108 µs | 150 µs | 12017 | 10.7 / 10.5 MiB |
+| v0.6.5 | noise | 6.71 Gbit/s | 107 µs | 151 µs | 4284 | 14.3 / 14.4 MiB |
+| v0.6.5 | tls | 12.66 Gbit/s | 113 µs | 164 µs | 4693 | 14.0 / 14.6 MiB |
+| v0.5.0 | tcp | 12.46 Gbit/s | 108 µs | 155 µs | 12322 | 12.6 / 12.5 MiB |
+| v0.5.0 | noise | 4.13 Gbit/s | 117 µs | 182 µs | 3343 | 44.0 / 36.0 MiB |
+| v0.5.0 | tls | 6.96 Gbit/s | 117 µs | 161 µs | 906 | 22.1 / 26.7 MiB |
+| frp v0.72.0 | tcp | 11.20 Gbit/s | 197 µs | 261 µs | 4949 | 36.2 / 38.3 MiB |
+| frp v0.72.0 | tls | 6.87 Gbit/s | 214 µs | 281 µs | 4818 | 36.7 / 28.4 MiB |
+| frp v0.38.0 | tcp | 5.95 Gbit/s | 190 µs | 252 µs | 6021 | 28.8 / 24.6 MiB |
+| frp v0.38.0 | tls | 4.39 Gbit/s | 207 µs | 280 µs | 5478 | 28.9 / 24.6 MiB |
 
 ↑ higher is better, ↓ lower is better.
 <!-- /bench:readme -->
