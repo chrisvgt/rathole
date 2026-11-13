@@ -1,0 +1,22 @@
+# Reverse services: the server exposes its local services, the client listens
+[client]
+remote_addr = "127.0.0.1:2373"
+default_token = "default_token_if_not_specify"
+
+[client.services.echo]
+mode = "reverse"
+bind_addr = "127.0.0.1:2374"
+[client.services.pingpong]
+mode = "reverse"
+bind_addr = "127.0.0.1:2375"
+
+[server]
+bind_addr = "127.0.0.1:2373"
+default_token = "default_token_if_not_specify"
+
+[server.services.echo]
+mode = "reverse"
+local_addr = "127.0.0.1:8100"
+[server.services.pingpong]
+mode = "reverse"
+local_addr = "127.0.0.1:8101"

@@ -1,0 +1,16 @@
+[client]
+remote_addr = "vps.example.com:2333"
+default_token = "use_a_long_random_token" # Same as the server
+
+[client.transport]
+type = "noise"
+[client.transport.noise]
+# The public key that `rathole --genkey` printed together with the server's
+# private key
+remote_public_key = "generate_with_rathole_--genkey"
+
+# Reach the dashboard at http://<this machine>:3000
+[client.services.crowdsec]
+mode = "reverse"
+type = "tcp"
+bind_addr = "0.0.0.0:3000" # The client listens here

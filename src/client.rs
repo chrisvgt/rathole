@@ -1,23 +1,23 @@
 use crate::backoff::{retry_notify, ExponentialBackoff};
-use crate::config::{ClientConfig, ClientServiceConfig, Config, ServiceType, TransportType};
+use crate::config::{
+    ClientConfig, ClientServiceConfig, Config, ServiceMode, ServiceType, TransportType,
+};
 use crate::config_watcher::{ClientServiceChange, ConfigChange};
-use crate::helper::udp_connect;
 use crate::protocol::Hello::{self, *};
 use crate::protocol::{
     self, read_ack, read_control_cmd, read_data_cmd, read_hello, Ack, Auth, ControlChannelCmd,
-    DataChannelCmd, UdpTraffic, CURRENT_PROTO_VERSION, HASH_WIDTH_IN_BYTES,
+    DataChannelCmd, CURRENT_PROTO_VERSION, HASH_WIDTH_IN_BYTES,
 };
 use crate::transport::{AddrMaybeCached, SocketOpts, TcpTransport, Transport};
+use crate::udp::{forward_udp, serve_udp_socket};
 use anyhow::{anyhow, bail, Context, Result};
-use bytes::{Bytes, BytesMut};
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::io::{self, copy_bidirectional_with_sizes, AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpStream, UdpSocket};
-use tokio::sync::{broadcast, mpsc, oneshot, RwLock};
+use tokio::io::{copy_bidirectional_with_sizes, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::time::{self, Duration, Instant};
-use tracing::{debug, error, info, instrument, trace, warn, Instrument, Span};
+use tracing::{debug, error, info, instrument, warn, Instrument, Span};
 
 #[cfg(feature = "noise")]
 use crate::transport::NoiseTransport;
@@ -27,9 +27,11 @@ use crate::transport::TlsTransport;
 use crate::transport::WebsocketTransport;
 
 use crate::constants::{
-    run_control_chan_backoff, COPY_BUFFER_SIZE, UDP_BUFFER_SIZE, UDP_MAX_FORWARDERS,
-    UDP_SENDQ_SIZE, UDP_TIMEOUT,
+    listen_backoff, run_control_chan_backoff, COPY_BUFFER_SIZE, UDP_MAX_FORWARDERS,
 };
+
+/// Timeout for connecting to the server and authenticating a reverse visitor
+const VISITOR_HANDSHAKE_TIMEOUT: u64 = 10;
 
 // The entrypoint of running a client
 pub async fn run_client(
@@ -217,20 +219,25 @@ async fn run_data_channel<T: Transport>(args: Arc<RunDataChannelArgs<T>>) -> Res
     // Do the handshake
     let mut conn = do_data_channel_handshake(args.clone()).await?;
 
+    let local_addr = args
+        .service
+        .local_addr
+        .as_deref()
+        .with_context(|| "Missing local_addr")?;
+
     // Forward
     match read_data_cmd(&mut conn).await? {
         DataChannelCmd::StartForwardTcp => {
             if args.service.service_type != ServiceType::Tcp {
                 bail!("Expect TCP traffic. Please check the configuration.")
             }
-            run_data_channel_for_tcp::<T>(conn, &args.service.local_addr).await?;
+            run_data_channel_for_tcp::<T>(conn, local_addr).await?;
         }
         DataChannelCmd::StartForwardUdp => {
             if args.service.service_type != ServiceType::Udp {
                 bail!("Expect UDP traffic. Please check the configuration.")
             }
-            run_data_channel_for_udp::<T>(conn, &args.service.local_addr, args.service.prefer_ipv6)
-                .await?;
+            run_data_channel_for_udp::<T>(conn, local_addr, args.service.prefer_ipv6).await?;
         }
     }
     Ok(())
@@ -253,178 +260,13 @@ async fn run_data_channel_for_tcp<T: Transport>(
     Ok(())
 }
 
-// Things get a little tricker when it gets to UDP because it's connection-less.
-// A UdpPortMap must be maintained for recent seen incoming address, giving them
-// each a local port, which is associated with a socket. So just the sender
-// to the socket will work fine for the map's value.
-type UdpPortMap = Arc<RwLock<HashMap<SocketAddr, mpsc::Sender<Bytes>>>>;
-
 #[instrument(skip(conn))]
 async fn run_data_channel_for_udp<T: Transport>(
     conn: T::Stream,
     local_addr: &str,
     prefer_ipv6: bool,
 ) -> Result<()> {
-    forward_udp::<T>(conn, local_addr, prefer_ipv6, UDP_MAX_FORWARDERS).await
-}
-
-async fn forward_udp<T: Transport>(
-    conn: T::Stream,
-    local_addr: &str,
-    prefer_ipv6: bool,
-    max_forwarders: usize,
-) -> Result<()> {
-    debug!("New data channel starts forwarding");
-
-    let port_map: UdpPortMap = Arc::new(RwLock::new(HashMap::new()));
-
-    // The channel stores UdpTraffic that needs to be sent to the server
-    let (outbound_tx, mut outbound_rx) = mpsc::channel::<UdpTraffic>(UDP_SENDQ_SIZE);
-
-    // FIXME: https://github.com/tokio-rs/tls/issues/40
-    // Maybe this is our concern
-    let (mut rd, mut wr) = io::split(conn);
-
-    // Keep sending items from the outbound channel to the server
-    tokio::spawn(async move {
-        while let Some(t) = outbound_rx.recv().await {
-            trace!("outbound {:?}", t);
-            let res = async {
-                t.write(&mut wr).await?;
-                // Encrypting transports may keep the data until the next flush
-                wr.flush().await?;
-                anyhow::Ok(())
-            }
-            .await
-            .with_context(|| "Failed to forward UDP traffic to the server");
-            if let Err(e) = res {
-                debug!("{:?}", e);
-                break;
-            }
-        }
-    });
-
-    // Whether the forwarder limit was reported since it was last reached
-    let mut limit_reported = false;
-
-    loop {
-        // Read a packet from the server
-        let hdr_len = rd.read_u8().await?;
-        let packet = UdpTraffic::read(&mut rd, hdr_len)
-            .await
-            .with_context(|| "Failed to read UDPTraffic from the server")?;
-        let m = port_map.read().await;
-
-        if m.get(&packet.from).is_none() {
-            // This packet is from a address we don't see for a while,
-            // which is not in the UdpPortMap.
-            // So set up a mapping (and a forwarder) for it
-
-            // Every visitor address costs a local socket, and visitor addresses
-            // can be spoofed. Drop packets from new visitors once the limit is reached
-            if m.len() >= max_forwarders {
-                if !limit_reported {
-                    warn!(
-                        "Too many UDP visitors ({}). Dropping packets from new visitors",
-                        max_forwarders
-                    );
-                    limit_reported = true;
-                }
-                continue;
-            }
-
-            // Drop the reader lock
-            drop(m);
-
-            // Connect before grabbing the writer lock, so the forwarders
-            // are not blocked while resolving `local_addr`
-            let s = udp_connect(local_addr, prefer_ipv6).await;
-
-            // Grab the writer lock
-            // This is the only thread that will try to grab the writer lock
-            // So no need to worry about some other thread has already set up
-            // the mapping between the gap of dropping the reader lock and
-            // grabbing the writer lock
-            let mut m = port_map.write().await;
-
-            match s {
-                Ok(s) => {
-                    limit_reported = false;
-                    let (inbound_tx, inbound_rx) = mpsc::channel(UDP_SENDQ_SIZE);
-                    m.insert(packet.from, inbound_tx);
-                    tokio::spawn(run_udp_forwarder(
-                        s,
-                        inbound_rx,
-                        outbound_tx.clone(),
-                        packet.from,
-                        port_map.clone(),
-                    ));
-                }
-                Err(e) => {
-                    error!("{:#}", e);
-                }
-            }
-        }
-
-        // Now there should be a udp forwarder that can receive the packet
-        let m = port_map.read().await;
-        if let Some(tx) = m.get(&packet.from) {
-            let _ = tx.send(packet.data).await;
-        }
-    }
-}
-
-// Run a UdpSocket for the visitor `from`
-#[instrument(skip_all, fields(from))]
-async fn run_udp_forwarder(
-    s: UdpSocket,
-    mut inbound_rx: mpsc::Receiver<Bytes>,
-    outbount_tx: mpsc::Sender<UdpTraffic>,
-    from: SocketAddr,
-    port_map: UdpPortMap,
-) -> Result<()> {
-    debug!("Forwarder created");
-    let mut buf = BytesMut::new();
-    buf.resize(UDP_BUFFER_SIZE, 0);
-
-    loop {
-        tokio::select! {
-            // Receive from the server
-            data = inbound_rx.recv() => {
-                if let Some(data) = data {
-                    s.send(&data).await?;
-                } else {
-                    break;
-                }
-            },
-
-            // Receive from the service
-            val = s.recv(&mut buf) => {
-                let len = match val {
-                    Ok(v) => v,
-                    Err(_) => break
-                };
-
-                let t = UdpTraffic{
-                    from,
-                    data: Bytes::copy_from_slice(&buf[..len])
-                };
-
-                outbount_tx.send(t).await?;
-            },
-
-            // No traffic for the duration of UDP_TIMEOUT, clean up the state
-            _ = time::sleep(Duration::from_secs(UDP_TIMEOUT)) => {
-                break;
-            }
-        }
-    }
-
-    let mut port_map = port_map.write().await;
-    port_map.remove(&from);
-
-    debug!("Forwarder dropped");
-    Ok(())
+    forward_udp(conn, local_addr, prefer_ipv6, UDP_MAX_FORWARDERS).await
 }
 
 // Control channel, using T as the transport layer
@@ -554,6 +396,29 @@ impl ControlChannelHandle {
         info!("Starting {}", hex::encode(digest));
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
+        // A reverse service has no control channel. The client listens and
+        // opens a connection to the server for every visitor
+        if service.mode == ServiceMode::Reverse {
+            let args = Arc::new(ReverseArgs {
+                digest,
+                service,
+                remote_addr,
+                transport,
+            });
+            tokio::spawn(
+                async move {
+                    if let Err(e) = run_reverse_service(args, shutdown_rx)
+                        .await
+                        .with_context(|| "Failed to run the reverse service")
+                    {
+                        error!("{:#}", e);
+                    }
+                }
+                .instrument(Span::current()),
+            );
+            return ControlChannelHandle { shutdown_tx };
+        }
+
         let mut retry_backoff = run_control_chan_backoff(
             service
                 .retry_interval
@@ -611,40 +476,227 @@ impl ControlChannelHandle {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashSet;
-    use tokio::net::TcpListener;
+/// What a reverse service needs to open connections to the server
+struct ReverseArgs<T: Transport> {
+    digest: ServiceDigest,        // SHA256 of the service name
+    service: ClientServiceConfig, // `[client.services.foo]` config block
+    remote_addr: String,          // `client.remote_addr`
+    transport: Arc<T>,            // Wrapper around the transport layer
+}
 
-    #[tokio::test]
-    async fn test_udp_forwarder_limit() -> Result<()> {
-        // The local service
-        let service = UdpSocket::bind("127.0.0.1:0").await?;
-        let local_addr = service.local_addr()?.to_string();
-
-        // The data channel. The server writes to `server`
-        let l = TcpListener::bind("127.0.0.1:0").await?;
-        let conn = TcpStream::connect(l.local_addr()?).await?;
-        let (mut server, _) = l.accept().await?;
-        tokio::spawn(async move {
-            let _ = forward_udp::<TcpTransport>(conn, &local_addr, false, 2).await;
-        });
-
-        // Three visitors, only two of them get a local socket
-        for port in 1..=3u16 {
-            let from: SocketAddr = format!("192.0.2.1:{port}").parse()?;
-            UdpTraffic::write_slice(&mut server, from, b"x").await?;
-        }
-
-        let mut sockets = HashSet::new();
-        let mut buf = [0u8; 16];
-        while let Ok(v) =
-            time::timeout(Duration::from_millis(500), service.recv_from(&mut buf)).await
-        {
-            sockets.insert(v?.1);
-        }
-        assert_eq!(sockets.len(), 2);
-        Ok(())
+impl<T: Transport> ReverseArgs<T> {
+    fn bind_addr(&self) -> Result<&str> {
+        self.service
+            .bind_addr
+            .as_deref()
+            .with_context(|| "Missing bind_addr")
     }
+}
+
+/// Opens a connection to the server with the configured transport and
+/// authenticates it for the reverse service. The server answers with a fresh
+/// nonce and the client proves it knows the token, like for a control channel.
+/// The token itself is never sent. Returns the stream after the server
+/// accepted it and `cmd` was sent
+async fn connect_visitor<T: Transport>(
+    args: &ReverseArgs<T>,
+    cmd: DataChannelCmd,
+) -> Result<T::Stream> {
+    time::timeout(Duration::from_secs(VISITOR_HANDSHAKE_TIMEOUT), async {
+        // Resolve again, the address of the server may have changed
+        let mut remote_addr = AddrMaybeCached::new(&args.remote_addr);
+        remote_addr.resolve().await?;
+
+        let mut conn = args
+            .transport
+            .connect(&remote_addr)
+            .await
+            .with_context(|| format!("Failed to connect to {}", args.remote_addr))?;
+        T::hint(&conn, SocketOpts::from_client_cfg(&args.service));
+
+        // Send hello
+        let hello_send = Hello::VisitorHello(CURRENT_PROTO_VERSION, args.digest);
+        conn.write_all(&protocol::encode(&hello_send)?).await?;
+        conn.flush().await?;
+
+        // Read hello
+        let nonce = match read_hello(&mut conn).await? {
+            VisitorHello(_, d) => d,
+            _ => bail!("Unexpected type of hello"),
+        };
+
+        // Send auth
+        let mut concat = Vec::from(
+            args.service
+                .token
+                .as_ref()
+                .with_context(|| "Missing token")?
+                .as_bytes(),
+        );
+        concat.extend_from_slice(&nonce);
+        let auth = Auth(protocol::digest(&concat));
+        conn.write_all(&protocol::encode(&auth)?).await?;
+        conn.flush().await?;
+
+        // Read ack
+        match read_ack(&mut conn).await? {
+            Ack::Ok => {}
+            v => {
+                return Err(anyhow!("{}", v))
+                    .with_context(|| format!("Authentication failed: {}", args.service.name));
+            }
+        }
+
+        // Tell the server what to forward
+        conn.write_all(&protocol::encode(&cmd)?).await?;
+        conn.flush().await?;
+
+        Ok(conn)
+    })
+    .await
+    .with_context(|| "Timeout connecting to the server")?
+}
+
+async fn run_reverse_service<T: 'static + Transport>(
+    args: Arc<ReverseArgs<T>>,
+    shutdown_rx: oneshot::Receiver<u8>,
+) -> Result<()> {
+    match args.service.service_type {
+        ServiceType::Tcp => run_reverse_tcp(args, shutdown_rx).await,
+        ServiceType::Udp => run_reverse_udp(args, shutdown_rx).await,
+    }
+}
+
+/// Listens at `bind_addr`. Every visitor gets a connection to the server of its own
+async fn run_reverse_tcp<T: 'static + Transport>(
+    args: Arc<ReverseArgs<T>>,
+    mut shutdown_rx: oneshot::Receiver<u8>,
+) -> Result<()> {
+    let bind_addr = args.bind_addr()?.to_string();
+
+    let l = tokio::select! {
+        l = retry_notify(
+            listen_backoff(),
+            || async { Ok(TcpListener::bind(&bind_addr).await?) },
+            |e: &anyhow::Error, duration| error!("{:#}. Retry in {:?}", e, duration),
+        ) => l.with_context(|| "Failed to listen for the service")?,
+        _ = &mut shutdown_rx => return Ok(()),
+    };
+    info!("Listening at {}", bind_addr);
+
+    // Retry at least every 1s
+    let mut backoff = ExponentialBackoff {
+        max_interval: Duration::from_secs(1),
+        max_elapsed_time: None,
+        ..Default::default()
+    };
+
+    loop {
+        tokio::select! {
+            val = l.accept() => match val {
+                Err(e) => {
+                    // Possibly a EMFILE. So sleep for a while
+                    error!("{}. Sleep for a while", e);
+                    match backoff.next_backoff() {
+                        Some(d) => time::sleep(d).await,
+                        None => {
+                            // This branch will never be reached for current backoff policy
+                            error!("Too many retries. Aborting...");
+                            break;
+                        }
+                    }
+                }
+                Ok((visitor, addr)) => {
+                    backoff.reset();
+                    debug!("New visitor from {}", addr);
+                    let args = args.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = run_reverse_tcp_visitor(args, visitor)
+                            .await
+                            .with_context(|| "Failed to forward the visitor")
+                        {
+                            warn!("{:#}", e);
+                        }
+                    }.instrument(Span::current()));
+                }
+            },
+            _ = &mut shutdown_rx => break,
+        }
+    }
+
+    info!("TCPListener shutdown");
+    Ok(())
+}
+
+async fn run_reverse_tcp_visitor<T: Transport>(
+    args: Arc<ReverseArgs<T>>,
+    mut visitor: TcpStream,
+) -> Result<()> {
+    SocketOpts::from_client_cfg(&args.service).apply(&visitor);
+    let mut conn = connect_visitor(&args, DataChannelCmd::StartForwardTcp).await?;
+    let _ =
+        copy_bidirectional_with_sizes(&mut conn, &mut visitor, COPY_BUFFER_SIZE, COPY_BUFFER_SIZE)
+            .await;
+    Ok(())
+}
+
+/// Listens at `bind_addr` and keeps one tunnel to the server for all datagrams.
+/// A broken tunnel is set up again
+async fn run_reverse_udp<T: 'static + Transport>(
+    args: Arc<ReverseArgs<T>>,
+    mut shutdown_rx: oneshot::Receiver<u8>,
+) -> Result<()> {
+    let bind_addr = args.bind_addr()?.to_string();
+
+    let l = tokio::select! {
+        l = retry_notify(
+            listen_backoff(),
+            || async { Ok(UdpSocket::bind(&bind_addr).await?) },
+            |e: &anyhow::Error, duration| warn!("{:#}. Retry in {:?}", e, duration),
+        ) => l.with_context(|| "Failed to listen for the service")?,
+        _ = &mut shutdown_rx => return Ok(()),
+    };
+    info!("Listening at {}", bind_addr);
+
+    let mut retry_backoff = run_control_chan_backoff(
+        args.service
+            .retry_interval
+            .unwrap_or(crate::config::DEFAULT_CLIENT_RETRY_INTERVAL_SECS),
+    );
+
+    loop {
+        let start = Instant::now();
+
+        let err = tokio::select! {
+            ret = async {
+                let mut conn = connect_visitor(&args, DataChannelCmd::StartForwardUdp).await?;
+                info!("UDP tunnel established");
+                serve_udp_socket(&l, &mut conn)
+                    .await
+                    .with_context(|| "The UDP tunnel is broken")
+            } => ret.err(),
+            _ = &mut shutdown_rx => break,
+        };
+
+        if start.elapsed() > Duration::from_secs(3) {
+            // The tunnel ran for at least 3 secs and then broke
+            retry_backoff.reset();
+        }
+
+        let Some(duration) = retry_backoff.next_backoff() else {
+            // The backoff has no deadline, so this is not expected to happen
+            bail!("Giving up the UDP tunnel");
+        };
+        match err {
+            Some(err) => error!("{:#}. Retry in {:?}...", err, duration),
+            None => warn!("The UDP tunnel ended. Retry in {:?}...", duration),
+        }
+        tokio::select! {
+            _ = time::sleep(duration) => {}
+            _ = &mut shutdown_rx => break,
+        }
+    }
+
+    info!("UDP tunnel shutdown");
+    Ok(())
 }
