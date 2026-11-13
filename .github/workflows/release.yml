@@ -46,15 +46,13 @@ jobs:
             dist/rathole-${{ matrix.target }}.zip.sha256
           generate_release_notes: true
           body: |
-            **TLS:** rustls is now the default, the release builds no longer need OpenSSL. PKCS#12 files from OpenSSL 3 work without `-legacy`, and a modified file or a wrong password is rejected. Build with the `native-tls` feature for the old behaviour.
+            **New: reverse services.** With `mode = "reverse"` the server exposes one of its own local services (`local_addr`) and the client listens on `bind_addr`, e.g. to reach a dashboard on the VPS from the home LAN without opening a port or running a reverse proxy there. Works for TCP, UDP, `tcp+udp` and port ranges over every transport, with the same authentication as control channels. The target is fixed by the server config. See `examples/reverse`.
 
-            **New:** tokens and keys can be read from files with `token_file`, `default_token_file`, `local_private_key_file` and `pkcs12_password_file`, e.g. for Docker secrets or systemd credentials.
+            **Fixed:** invalid Noise keys and Curve448 patterns are rejected at startup instead of panicking or being zero-padded. `--genkey x448` is removed, it never worked.
 
-            **Fixed:** the config is reloaded when it is a symlink, e.g. a Kubernetes ConfigMap.
+            **Platforms:** releases are Linux-only: x86_64 (gnu and musl), aarch64-musl and armv7-musleabihf. Windows, macOS, MIPS and ARMv6 builds are dropped.
 
-            **Docker:** images for amd64 and arm64 at `ghcr.io/chrisvgt/rathole`.
+            Also: development and CI run through `./docker.sh` without a local Rust toolchain, and dependencies are updated.
 
-            Also: the systemd units in `examples/systemd` run as their own user with sandboxing, and outdated docs and examples were removed.
-
-            No protocol change, compatible with 0.6.0 and later.
+            Compatible with 0.6.0 and later. Reverse services need 0.7.0 on both server and client; existing configs are unaffected.
           draft: true
