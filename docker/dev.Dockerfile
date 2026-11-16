@@ -7,7 +7,7 @@
 #
 # Build:  docker build -f docker/dev.Dockerfile -t rathole-dev:check .
 
-FROM rust:1.99-trixie
+FROM rust:1.100-trixie
 
 # 1. Rust toolchain: clippy, rustfmt, and the native musl target.
 RUN rustup component add clippy rustfmt \
