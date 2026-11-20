@@ -5,7 +5,7 @@
 #
 # The config file must be readable by UID 1000.
 
-FROM rust:1.99-trixie AS builder
+FROM rust:1.100-trixie AS builder
 WORKDIR /src
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo install --locked --features cli cargo-about@0.9.3
